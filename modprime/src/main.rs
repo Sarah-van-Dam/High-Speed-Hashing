@@ -111,13 +111,24 @@ fn test_multiply_small() {
 
 #[test]
 fn test_multiply_big() {
-    let r = multiply_add([0x77777777, 0xdddddddd, 0x22222222], [0, 0, 0], [0xeeeeeeee, 0x33333333]);
-    assert_eq!([0xd4c3b2a2, 0xcccccccc, 0x56789abb, 0x789abcdf, 0x6d3a06d], r);
+    let r = multiply_add(
+        [0x77777777, 0xdddddddd, 0x22222222],
+        [0, 0, 0],
+        [0xeeeeeeee, 0x33333333],
+    );
+    assert_eq!(
+        [0xd4c3b2a2, 0xcccccccc, 0x56789abb, 0x789abcdf, 0x6d3a06d],
+        r
+    );
 }
 
 #[test]
 fn test_multiply_max() {
-    let r = multiply_add([0xffffffff, 0xffffffff, 0xffffffff], [0, 0, 0], [0xffffffff, 0xffffffff]);
+    let r = multiply_add(
+        [0xffffffff, 0xffffffff, 0xffffffff],
+        [0, 0, 0],
+        [0xffffffff, 0xffffffff],
+    );
     assert_eq!([1, 0, 4294967295, 4294967294, 4294967295], r);
 }
 
@@ -129,13 +140,24 @@ fn test_multiply_add_small() {
 
 #[test]
 fn test_multiply_add_big() {
-    let r = multiply_add([0x77777777, 0xdddddddd, 0x22222222], [0x55555555, 0xcccccccc, 0xffffffff], [0xeeeeeeee, 0x33333333]);
-    assert_eq!([706283511, 2576980377, 1450744507, 2023406816, 114532461], r);
+    let r = multiply_add(
+        [0x77777777, 0xdddddddd, 0x22222222],
+        [0x55555555, 0xcccccccc, 0xffffffff],
+        [0xeeeeeeee, 0x33333333],
+    );
+    assert_eq!(
+        [706283511, 2576980377, 1450744507, 2023406816, 114532461],
+        r
+    );
 }
 
 #[test]
 fn test_multiply_add_max() {
-    let r = multiply_add([0xffffffff, 0xffffffff, 0xffffffff], [0xffffffff, 0xffffffff, 0xffffffff], [0xffffffff, 0xffffffff]);
+    let r = multiply_add(
+        [0xffffffff, 0xffffffff, 0xffffffff],
+        [0xffffffff, 0xffffffff, 0xffffffff],
+        [0xffffffff, 0xffffffff],
+    );
     assert_eq!([0, 0, 0xffffffff, 0xffffffff, 0xffffffff], r);
 }
 
@@ -147,13 +169,19 @@ fn test_modulo_small() {
 
 #[test]
 fn test_modulo_big() {
-    let r = modulo([0x77777777, 0x11111111, 0xdddddddd, 0xbbbbbbbb, 0x22222222], 0x44444444);
+    let r = modulo(
+        [0x77777777, 0x11111111, 0xdddddddd, 0xbbbbbbbb, 0x22222222],
+        0x44444444,
+    );
     assert_eq!(603979885, r);
 }
 
 #[test]
 fn test_modulo_max1() {
-    let r = modulo([0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff], 0xffffffff);
+    let r = modulo(
+        [0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff],
+        0xffffffff,
+    );
     assert_eq!(127, r);
 }
 
