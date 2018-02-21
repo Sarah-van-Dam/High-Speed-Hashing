@@ -21,6 +21,8 @@ pub fn multiply_add(a: [u32; 3], b: [u32; 3], x: [u32; 2]) -> [u32; 5] {
     let d3 = (d2 >> 32) + (c3 & 0xffffffff) + a2x1;
     let d4 = d3 >> 32;
 
+    // TODO: We could reduce ax mod p before adding b.
+
     let e0 = (d0 & 0xffffffff) + (b[0] as u64);
     let e1 = (e0 >> 32) + (d1 & 0xffffffff) + (b[1] as u64);
     let e2 = (e1 >> 32) + (d2 & 0xffffffff) + (b[2] as u64);
@@ -30,57 +32,75 @@ pub fn multiply_add(a: [u32; 3], b: [u32; 3], x: [u32; 2]) -> [u32; 5] {
     [e0 as u32, e1 as u32, e2 as u32, e3 as u32, e4 as u32]
 }
 
-pub fn modulo(p: [u32; 3], m: u32, mut y: [u32; 5]) -> u32 {
-    loop {
-        let c0 = (y[0] as i64) - (p[0] as i64);
-        let c1 = (c0 >> 32) + (y[1] as i64) - (p[1] as i64);
-        let c2 = (c1 >> 32) + (y[2] as i64) - (p[2] as i64);
-        let c3 = (c2 >> 32) + (y[3] as i64);
-        let c4 = (c3 >> 32) + (y[4] as i64);
+pub fn modulo(y: [u32; 5], m: u32) -> u32 {
+    let c0 = y[0]; // 32 bits
+    let c1 = y[1]; // 32 bits
+    let c2 = y[2] & 0x1ffffff; // 25 bits
 
-        if c4 < 0 {
+    let d0 = ((y[3] & 0x1ffffff) << 7) | (y[2] >> 25);
+    let d1 = ((y[4] & 0x1ffffff) << 7) | (y[3] >> 25);
+    let d2 = y[4] >> 25;
+
+    let e0 = (c0 as u64) + (d0 as u64);
+    let e1 = (e0 >> 32) + (c1 as u64) + (d1 as u64);
+    let e2 = (e1 >> 32) + (c2 as u64) + (d2 as u64);
+    let e3 = e2 >> 32;
+
+    assert_eq!(0, e3);
+
+    let mut e = [e0 as u32, e1 as u32, e2 as u32];
+
+    loop {
+        // Since e = a + b for a,b in [p+1], we risk e > p and even e = 2p.
+
+        let f0 = (e[0] as i64) - 0xffffffff;
+        let f1 = (f0 >> 32) + (e[1] as i64) - 0xffffffff;
+        let f2 = (f1 >> 32) + (e[2] as i64) - 0x1ffffff;
+
+        if f2 < 0 {
             break;
         }
 
-        y[0] = c0 as u32;
-        y[1] = c1 as u32;
-        y[2] = c2 as u32;
-        y[3] = c3 as u32;
-        y[4] = c4 as u32;
+        e = [f0 as u32, f1 as u32, f2 as u32];
+    }
 
-        if y[4] == 0 && y[3] == 0 && y[2] == 0 && y[1] == 0 && y[0] == 0 {
-            break;
+    //println!("{:?} = {:?} : {:?} equiv {:?} (mod 2^89 - 1)", y, [c0, c1, c2], [d0, d1, d2], e);
+
+    // Russian peasant multiplication by 1
+
+    let mut k = 1;
+    let mut r = 0;
+
+    while e != [0, 0, 0] {
+        //println!("e: {:?}, k: {:?}, r: {:?}, m: {:?}", e, k, r, m);
+
+        if e[0] & 1 == 1 {
+            r += k;
+            if r >= m as u64 {
+                r -= m as u64;
+            }
+        }
+
+        e[0] = (e[1] << 31) | (e[0] >> 1);
+        e[1] = (e[2] << 31) | (e[1] >> 1);
+        e[2] = e[2] >> 1;
+
+        k *= 2;
+        if k >= m as u64 {
+            k -= m as u64;
         }
     }
 
-    loop {
-        let c0 = (y[0] as i64) - m as i64;
-        let c1 = (c0 >> 32) + (y[1] as i64);
-        let c2 = (c1 >> 32) + (y[2] as i64);
-        let c3 = (c2 >> 32) + (y[3] as i64);
-        let c4 = (c3 >> 32) + (y[4] as i64);
+    assert_eq!([0, 0, 0], e);
+    assert!(r < m as u64, "{} < {}", r, m);
 
-        if c4 < 0 {
-            break;
-        }
+    r as u32
+}
 
-        y[0] = c0 as u32;
-        y[1] = c1 as u32;
-        y[2] = c2 as u32;
-        y[3] = c3 as u32;
-        y[4] = c4 as u32;
-
-        if y[4] == 0 && y[3] == 0 && y[2] == 0 && y[1] == 0 && y[0] == 0 {
-            break;
-        }
-    }
-
-    assert_eq!(0, y[4]);
-    assert_eq!(0, y[3]);
-    assert_eq!(0, y[2]);
-    assert_eq!(0, y[1]);
-
-    y[0]
+pub fn mod_prime(m: u32, a: [u32; 3], b: [u32; 3], x: [u32; 2]) -> u32 {
+    let y = multiply_add(a, b, x);
+    let r = modulo(y, m);
+    r
 }
 
 #[test]
@@ -120,29 +140,39 @@ fn test_multiply_add_max() {
 }
 
 #[test]
-fn test_modulo_p_small() {
-    let r = modulo([11, 0, 0], 1000, [273, 0, 0, 0, 0]);
+fn test_modulo_small() {
+    let r = modulo([273, 0, 0, 0, 0], 11);
     assert_eq!(9, r);
 }
 
 #[test]
-fn test_modulo_small() {
-    let r = modulo([11, 0, 0], 5, [273, 0, 0, 0, 0]);
-    assert_eq!(4, r);
+fn test_modulo_big() {
+    let r = modulo([0x77777777, 0x11111111, 0xdddddddd, 0xbbbbbbbb, 0x22222222], 0x44444444);
+    assert_eq!(603979885, r);
 }
 
 #[test]
-fn test_modulo_big() {
-    let r = modulo([0x77777777, 0x33333333, 0xdddddddd], 0x44444444, [0x77777777, 0x11111111, 0xdddddddd, 0xbbbbbbbb, 0x22222222]);
+fn test_modulo_max1() {
+    let r = modulo([0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff], 0xffffffff);
+    assert_eq!(127, r);
+}
+
+#[test]
+fn test_modulo_max2() {
+    // p mod p = 0, so (p mod p) mod m = 0.
+    let r = modulo([0xffffffff, 0xffffffff, 0x1ffffff, 0, 0], 0xffffffff);
     assert_eq!(0, r);
 }
 
+#[test]
+fn test_modulo_max3() {
+    // (p - 1 mod p) mod m
+    let r = modulo([0xfffffffe, 0xffffffff, 0x1ffffff, 0, 0], 0xffffffff);
+    assert_eq!(33554430, r);
+}
+
+// TODO: Test mod_prime.
+
 fn main() {
-    let a = [1, 0, 0];
-    let b = [2, 0, 0];
-    let x = [5, 0];
-
-    let z = multiply_add(a, b, x);
-
-    println!("{:?} * {:?} + {:?} = {:?}", a, x, b, z);
+    // do nothing for now
 }
