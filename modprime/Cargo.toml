@@ -1,0 +1,6 @@
+[package]
+name = "modprime"
+version = "0.1.0"
+authors = ["snocl <snorredc@gmail.com>"]
+
+[dependencies]
