@@ -3,6 +3,7 @@
 pub const PRIME: [u32; 3] = [0xffffffff, 0xffffffff, (1 << 25) - 1];
 
 pub fn multiply_add(a: [u32; 3], b: [u32; 3], x: [u32; 2]) -> [u32; 5] {
+    // Calculate pair-wise multiplication.
     let a0x0 = (a[0] as u64) * (x[0] as u64);
     let a1x0 = (a[1] as u64) * (x[0] as u64);
     let a2x0 = (a[2] as u64) * (x[0] as u64);
@@ -10,11 +11,13 @@ pub fn multiply_add(a: [u32; 3], b: [u32; 3], x: [u32; 2]) -> [u32; 5] {
     let a1x1 = (a[1] as u64) * (x[1] as u64);
     let a2x1 = (a[2] as u64) * (x[1] as u64);
 
+    // Calculate c = a x0.
     let c0 = a0x0;
     let c1 = (c0 >> 32) + a1x0;
     let c2 = (c1 >> 32) + a2x0;
     let c3 = c2 >> 32;
 
+    // Calculate d = a x = c + 2^32 a x1.
     let d0 = c0 & 0xffffffff;
     let d1 = (d0 >> 32) + (c1 & 0xffffffff) + a0x1;
     let d2 = (d1 >> 32) + (c2 & 0xffffffff) + a1x1;
@@ -23,6 +26,7 @@ pub fn multiply_add(a: [u32; 3], b: [u32; 3], x: [u32; 2]) -> [u32; 5] {
 
     // TODO: We could reduce ax mod p before adding b.
 
+    // Calculate e = d + b = a x + b.
     let e0 = (d0 & 0xffffffff) + (b[0] as u64);
     let e1 = (e0 >> 32) + (d1 & 0xffffffff) + (b[1] as u64);
     let e2 = (e1 >> 32) + (d2 & 0xffffffff) + (b[2] as u64);
@@ -33,6 +37,8 @@ pub fn multiply_add(a: [u32; 3], b: [u32; 3], x: [u32; 2]) -> [u32; 5] {
 }
 
 pub fn modulo(y: [u32; 5], m: u32) -> u32 {
+    // Calculate (p + 1) c + d = y.
+
     let c0 = y[0]; // 32 bits
     let c1 = y[1]; // 32 bits
     let c2 = y[2] & 0x1ffffff; // 25 bits
@@ -41,6 +47,7 @@ pub fn modulo(y: [u32; 5], m: u32) -> u32 {
     let d1 = ((y[4] & 0x1ffffff) << 7) | (y[3] >> 25);
     let d2 = y[4] >> 25;
 
+    // Calculate e = c + d equiv y (mod p).
     let e0 = (c0 as u64) + (d0 as u64);
     let e1 = (e0 >> 32) + (c1 as u64) + (d1 as u64);
     let e2 = (e1 >> 32) + (c2 as u64) + (d2 as u64);
@@ -50,6 +57,7 @@ pub fn modulo(y: [u32; 5], m: u32) -> u32 {
 
     let mut e = [e0 as u32, e1 as u32, e2 as u32];
 
+    // Calculate e' = e mod p = y mod p.
     loop {
         // Since e = a + b for a,b in [p+1], we risk e > p and even e = 2p.
 
@@ -66,7 +74,7 @@ pub fn modulo(y: [u32; 5], m: u32) -> u32 {
 
     //println!("{:?} = {:?} : {:?} equiv {:?} (mod 2^89 - 1)", y, [c0, c1, c2], [d0, d1, d2], e);
 
-    // Russian peasant multiplication by 1
+    // Russian peasant multiplication by 1.
 
     let mut k = 1;
     let mut r = 0;
@@ -98,7 +106,9 @@ pub fn modulo(y: [u32; 5], m: u32) -> u32 {
 }
 
 pub fn mod_prime(m: u32, a: [u32; 3], b: [u32; 3], x: [u32; 2]) -> u32 {
+    // Calculate a x + b.
     let y = multiply_add(a, b, x);
+    // Calculate ((a x + b) mod p) mod m.
     let r = modulo(y, m);
     r
 }
