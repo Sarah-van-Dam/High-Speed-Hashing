@@ -30,6 +30,59 @@ pub fn multiply_add(a: [u32; 3], b: [u32; 3], x: [u32; 2]) -> [u32; 5] {
     [e0 as u32, e1 as u32, e2 as u32, e3 as u32, e4 as u32]
 }
 
+pub fn modulo(p: [u32; 3], m: u32, mut y: [u32; 5]) -> u32 {
+    loop {
+        let c0 = (y[0] as i64) - (p[0] as i64);
+        let c1 = (c0 >> 32) + (y[1] as i64) - (p[1] as i64);
+        let c2 = (c1 >> 32) + (y[2] as i64) - (p[2] as i64);
+        let c3 = (c2 >> 32) + (y[3] as i64);
+        let c4 = (c3 >> 32) + (y[4] as i64);
+
+        if c4 < 0 {
+            break;
+        }
+
+        y[0] = c0 as u32;
+        y[1] = c1 as u32;
+        y[2] = c2 as u32;
+        y[3] = c3 as u32;
+        y[4] = c4 as u32;
+
+        if y[4] == 0 && y[3] == 0 && y[2] == 0 && y[1] == 0 && y[0] == 0 {
+            break;
+        }
+    }
+
+    loop {
+        let c0 = (y[0] as i64) - m as i64;
+        let c1 = (c0 >> 32) + (y[1] as i64);
+        let c2 = (c1 >> 32) + (y[2] as i64);
+        let c3 = (c2 >> 32) + (y[3] as i64);
+        let c4 = (c3 >> 32) + (y[4] as i64);
+
+        if c4 < 0 {
+            break;
+        }
+
+        y[0] = c0 as u32;
+        y[1] = c1 as u32;
+        y[2] = c2 as u32;
+        y[3] = c3 as u32;
+        y[4] = c4 as u32;
+
+        if y[4] == 0 && y[3] == 0 && y[2] == 0 && y[1] == 0 && y[0] == 0 {
+            break;
+        }
+    }
+
+    assert_eq!(0, y[4]);
+    assert_eq!(0, y[3]);
+    assert_eq!(0, y[2]);
+    assert_eq!(0, y[1]);
+
+    y[0]
+}
+
 #[test]
 fn test_multiply_small() {
     let r = multiply_add([1, 0, 0], [0, 0, 0], [5, 0]);
@@ -64,6 +117,24 @@ fn test_multiply_add_big() {
 fn test_multiply_add_max() {
     let r = multiply_add([0xffffffff, 0xffffffff, 0xffffffff], [0xffffffff, 0xffffffff, 0xffffffff], [0xffffffff, 0xffffffff]);
     assert_eq!([0, 0, 0xffffffff, 0xffffffff, 0xffffffff], r);
+}
+
+#[test]
+fn test_modulo_p_small() {
+    let r = modulo([11, 0, 0], 1000, [273, 0, 0, 0, 0]);
+    assert_eq!(9, r);
+}
+
+#[test]
+fn test_modulo_small() {
+    let r = modulo([11, 0, 0], 5, [273, 0, 0, 0, 0]);
+    assert_eq!(4, r);
+}
+
+#[test]
+fn test_modulo_big() {
+    let r = modulo([0x77777777, 0x33333333, 0xdddddddd], 0x44444444, [0x77777777, 0x11111111, 0xdddddddd, 0xbbbbbbbb, 0x22222222]);
+    assert_eq!(0, r);
 }
 
 fn main() {
