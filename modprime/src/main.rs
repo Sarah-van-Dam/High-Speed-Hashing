@@ -1,3 +1,5 @@
+use std::fmt::{self, Debug};
+
 // NOTE: All numbers are represented with the least significant parts first.
 
 pub const PRIME: [u32; 3] = [0xffffffff, 0xffffffff, (1 << 25) - 1];
@@ -111,6 +113,27 @@ pub fn mod_prime(m: u32, a: [u32; 3], b: [u32; 3], x: [u32; 2]) -> u32 {
     // Calculate ((a x + b) mod p) mod m.
     let r = modulo(y, m);
     r
+}
+
+pub struct HexBigint<'a>(pub &'a [u32]);
+
+impl<'a> Debug for HexBigint<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.0.is_empty() {
+            write!(f, "(empty bigint)")?;
+            return Ok(());
+        }
+
+        write!(f, "0x")?;
+        for (i, &part) in self.0.iter().rev().enumerate() {
+            if i != 0 {
+                write!(f, "_")?;
+            }
+            write!(f, "{:08x}", part)?;
+        }
+
+        Ok(())
+    }
 }
 
 #[test]
