@@ -1,8 +1,10 @@
 use std::fmt::{self, Debug};
 
-// NOTE: All numbers are represented with the least significant parts first.
+// Assumptions:
+// * The prime is p = 2^89 - 1.
+// * The hash size is m = 2^20.
 
-pub const PRIME: [u32; 3] = [0xffffffff, 0xffffffff, (1 << 25) - 1];
+// NOTE: All numbers are represented with the least significant parts first.
 
 pub fn multiply_add(a: [u32; 3], b: [u32; 3], x: [u32; 2]) -> [u32; 5] {
     // Calculate pair-wise multiplication.
@@ -38,7 +40,7 @@ pub fn multiply_add(a: [u32; 3], b: [u32; 3], x: [u32; 2]) -> [u32; 5] {
     [e0 as u32, e1 as u32, e2 as u32, e3 as u32, e4 as u32]
 }
 
-pub fn modulo(y: [u32; 5], m: u32) -> u32 {
+pub fn modulo(y: [u32; 5]) -> u32 {
     // Calculate (p + 1) c + d = y.
 
     let c0 = y[0]; // 32 bits
@@ -74,44 +76,14 @@ pub fn modulo(y: [u32; 5], m: u32) -> u32 {
         e = [f0 as u32, f1 as u32, f2 as u32];
     }
 
-    //println!("{:?} = {:?} : {:?} equiv {:?} (mod 2^89 - 1)", y, [c0, c1, c2], [d0, d1, d2], e);
-
-    // Russian peasant multiplication by 1.
-
-    let mut k = 1;
-    let mut r = 0;
-
-    while e != [0, 0, 0] {
-        //println!("e: {:?}, k: {:?}, r: {:?}, m: {:?}", e, k, r, m);
-
-        if e[0] & 1 == 1 {
-            r += k;
-            if r >= m as u64 {
-                r -= m as u64;
-            }
-        }
-
-        e[0] = (e[1] << 31) | (e[0] >> 1);
-        e[1] = (e[2] << 31) | (e[1] >> 1);
-        e[2] = e[2] >> 1;
-
-        k *= 2;
-        if k >= m as u64 {
-            k -= m as u64;
-        }
-    }
-
-    assert_eq!([0, 0, 0], e);
-    assert!(r < m as u64, "{} < {}", r, m);
-
-    r as u32
+    e[0] & 0x000fffff
 }
 
-pub fn mod_prime(m: u32, a: [u32; 3], b: [u32; 3], x: [u32; 2]) -> u32 {
+pub fn mod_prime(a: [u32; 3], b: [u32; 3], x: [u32; 2]) -> u32 {
     // Calculate a x + b.
     let y = multiply_add(a, b, x);
     // Calculate ((a x + b) mod p) mod m.
-    let r = modulo(y, m);
+    let r = modulo(y);
     r
 }
 
@@ -196,40 +168,34 @@ fn test_multiply_add_max() {
 
 #[test]
 fn test_modulo_small() {
-    let r = modulo([273, 0, 0, 0, 0], 11);
-    assert_eq!(9, r);
+    let r = modulo([273, 0, 0, 0, 0]);
+    assert_eq!(273, r);
 }
 
 #[test]
 fn test_modulo_big() {
-    let r = modulo(
-        [0x77777777, 0x11111111, 0xdddddddd, 0xbbbbbbbb, 0x22222222],
-        0x44444444,
-    );
-    assert_eq!(603979885, r);
+    let r = modulo([0x77777777, 0x11111111, 0xdddddddd, 0xbbbbbbbb, 0x22222222]);
+    assert_eq!(0x55565, r);
 }
 
 #[test]
 fn test_modulo_max1() {
-    let r = modulo(
-        [0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff],
-        0xffffffff,
-    );
-    assert_eq!(127, r);
+    let r = modulo([0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff]);
+    assert_eq!(0xfffff, r);
 }
 
 #[test]
 fn test_modulo_max2() {
     // p mod p = 0, so (p mod p) mod m = 0.
-    let r = modulo([0xffffffff, 0xffffffff, 0x1ffffff, 0, 0], 0xffffffff);
+    let r = modulo([0xffffffff, 0xffffffff, 0x1ffffff, 0, 0]);
     assert_eq!(0, r);
 }
 
 #[test]
 fn test_modulo_max3() {
     // (p - 1 mod p) mod m
-    let r = modulo([0xfffffffe, 0xffffffff, 0x1ffffff, 0, 0], 0xffffffff);
-    assert_eq!(33554430, r);
+    let r = modulo([0xfffffffe, 0xffffffff, 0x1ffffff, 0, 0]);
+    assert_eq!(0xffffe, r);
 }
 
 // TODO: Test mod_prime.
