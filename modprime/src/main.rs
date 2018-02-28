@@ -1,10 +1,24 @@
+#![cfg_attr(test, feature(test))]
+
+#[cfg(test)]
+extern crate test;
+
+extern crate rand;
+
+use std::env;
 use std::fmt::{self, Debug};
+use std::process;
+use std::path::Path;
+
+use rand::Rng;
 
 // Assumptions:
 // * The prime is p = 2^89 - 1.
 // * The hash size is m = 2^20.
 
 // NOTE: All numbers are represented with the least significant parts first.
+
+// TODO: Rename variable names to be consistent.
 
 pub fn multiply_add(a: [u32; 3], b: [u32; 3], x: [u32; 2]) -> [u32; 5] {
     // Calculate pair-wise multiplication.
@@ -47,8 +61,8 @@ pub fn modulo(y: [u32; 5]) -> u32 {
     let c1 = y[1]; // 32 bits
     let c2 = y[2] & 0x1ffffff; // 25 bits
 
-    let d0 = ((y[3] & 0x1ffffff) << 7) | (y[2] >> 25);
-    let d1 = ((y[4] & 0x1ffffff) << 7) | (y[3] >> 25);
+    let d0 = (y[3] << 7) | (y[2] >> 25);
+    let d1 = (y[4] << 7) | (y[3] >> 25);
     let d2 = y[4] >> 25;
 
     // Calculate e = c + d equiv y (mod p).
@@ -198,8 +212,108 @@ fn test_modulo_max3() {
     assert_eq!(0xffffe, r);
 }
 
-// TODO: Test mod_prime.
+#[test]
+fn test_multiply_mod_prime_one() {
+    let a = [1234, 5432, 1111];
+    let b = [111, 22222, 3333];
+    let x = [123, 321];
+
+    let y = multiply_add(a, b, x);
+
+    let old = modulo(y);
+    let new = mod_prime(a, b, x);
+
+    assert_eq!(old, new);
+}
+
+#[test]
+fn test_multiply_mod_prime_max1() {
+    let a = [0xffffffff, 0xffffffff, 0xffffffff];
+    let b = [0xffffffff, 0xffffffff, 0xffffffff];
+    let x = [0xffffffff, 0xffffffff];
+
+    let y = multiply_add(a, b, x);
+
+    println!(
+        "{:?} * {:?} + {:?} mod 2^89 - 1 = {:?}",
+        HexBigint(&a[..]),
+        HexBigint(&x[..]),
+        HexBigint(&b[..]),
+        HexBigint(&y[..])
+    );
+
+    let old = modulo(y);
+    let new = mod_prime(a, b, x);
+
+    assert_eq!(old, new);
+}
+
+#[bench]
+fn bench(bench: &mut test::Bencher) {
+    let a = test::black_box([0x77777777, 0xdddddddd, 0x22222222]);
+    let b = test::black_box([0x55555555, 0xcccccccc, 0xffffffff]);
+    let x = test::black_box([0xffffffff, 0xffffffff]);
+
+    bench.iter(|| mod_prime(a, b, x));
+}
+
+fn parse_count() -> Result<u32, String> {
+    let mut args = env::args();
+
+    let prog = args.next().unwrap_or_else(|| "modprime".into());
+    let prog_name = Path::new(&prog)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("modprime");
+
+    let arg = match args.next() {
+        Some(arg) => arg,
+        None => return Err(format!("Usage: {} count", prog_name)),
+    };
+
+    let count = match arg.parse::<u32>() {
+        Ok(count) => count,
+        Err(err) => return Err(format!("{}: invalid count argument: {}", prog, err)),
+    };
+
+    Ok(count)
+}
 
 fn main() {
-    // do nothing for now
+    let count = match parse_count() {
+        Ok(count) => count,
+        Err(err) => {
+            eprintln!("{}", err);
+            process::exit(2);
+        }
+    };
+
+    let mut rng = rand::thread_rng();
+
+    for _ in 0..count {
+        let mut a;
+        loop {
+            a = [rng.gen(), rng.gen(), rng.gen::<u32>() & 0x01ffffff];
+            if a != [0, 0, 0] && a != [0xffffffff, 0xffffffff, 0x01ffffff] {
+                break;
+            }
+        }
+        let mut b;
+        loop {
+            b = [rng.gen(), rng.gen(), rng.gen::<u32>() & 0x01ffffff];
+            if b != [0xffffffff, 0xffffffff, 0x01ffffff] {
+                break;
+            }
+        }
+        let x: [u32; 2] = rng.gen();
+
+        let y = mod_prime(a, b, x);
+        println!(
+            "{:?},{:?},{:?},{:?}",
+            HexBigint(&a[..]),
+            HexBigint(&b[..]),
+            HexBigint(&x[..]),
+            HexBigint(&[y][..])
+        );
+    }
 }
