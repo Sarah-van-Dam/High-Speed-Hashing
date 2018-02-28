@@ -212,42 +212,6 @@ fn test_modulo_max3() {
     assert_eq!(0xffffe, r);
 }
 
-#[test]
-fn test_multiply_mod_prime_one() {
-    let a = [1234, 5432, 1111];
-    let b = [111, 22222, 3333];
-    let x = [123, 321];
-
-    let y = multiply_add(a, b, x);
-
-    let old = modulo(y);
-    let new = mod_prime(a, b, x);
-
-    assert_eq!(old, new);
-}
-
-#[test]
-fn test_multiply_mod_prime_max1() {
-    let a = [0xffffffff, 0xffffffff, 0xffffffff];
-    let b = [0xffffffff, 0xffffffff, 0xffffffff];
-    let x = [0xffffffff, 0xffffffff];
-
-    let y = multiply_add(a, b, x);
-
-    println!(
-        "{:?} * {:?} + {:?} mod 2^89 - 1 = {:?}",
-        HexBigint(&a[..]),
-        HexBigint(&x[..]),
-        HexBigint(&b[..]),
-        HexBigint(&y[..])
-    );
-
-    let old = modulo(y);
-    let new = mod_prime(a, b, x);
-
-    assert_eq!(old, new);
-}
-
 #[bench]
 fn bench(bench: &mut test::Bencher) {
     let a = test::black_box([0x77777777, 0xdddddddd, 0x22222222]);
