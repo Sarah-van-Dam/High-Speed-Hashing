@@ -60,24 +60,22 @@ pub fn modulo(y: [u32; 5]) -> u32 {
     let e2 = (e1 >> 32) + (c2 as u64) + (d2 as u64);
     let e3 = e2 >> 32;
 
-    assert_eq!(0, e3);
+    debug_assert_eq!(0, e3);
 
     let mut e = [e0 as u32, e1 as u32, e2 as u32];
 
     // Calculate e' = e mod p = y mod p.
-    loop {
-        // Since e = a + b for a,b in [p+1], we risk e > p and even e = 2p.
+    //loop {
+    // Since e = a + b for a,b in [p+1], we risk e > p.
 
-        let f0 = (e[0] as i64) - 0xffffffff;
-        let f1 = (f0 >> 32) + (e[1] as i64) - 0xffffffff;
-        let f2 = (f1 >> 32) + (e[2] as i64) - 0x1ffffff;
+    let f0 = (e[0] as i64) - 0xffffffff;
+    let f1 = (f0 >> 32) + (e[1] as i64) - 0xffffffff;
+    let f2 = (f1 >> 32) + (e[2] as i64) - 0x1ffffff;
 
-        if f2 < 0 {
-            break;
-        }
-
+    if f2 >= 0 {
         e = [f0 as u32, f1 as u32, f2 as u32];
     }
+    //}
 
     e[0] & 0x000fffff
 }

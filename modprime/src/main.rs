@@ -1,97 +1,183 @@
-#![cfg_attr(test, feature(test))]
+#![feature(test, sip_hash_13)]
 
-#[cfg(test)]
 extern crate test;
 
-extern crate rand;
-
 use std::env;
-use std::fmt::{self, Debug};
 use std::process;
-use std::path::Path;
+use std::time::Instant;
 
-use rand::Rng;
+#[allow(deprecated)]
+use std::hash::{Hasher, SipHasher24};
 
 pub mod modprime;
+pub mod shift;
 
-pub struct HexBigint<'a>(pub &'a [u32]);
+#[derive(Clone, Copy, Debug)]
+pub enum OutputMode {
+    Csv,
+    Pretty,
+}
 
-impl<'a> Debug for HexBigint<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.0.is_empty() {
-            write!(f, "(empty bigint)")?;
-            return Ok(());
+impl OutputMode {
+    pub fn is_csv(self) -> bool {
+        match self {
+            OutputMode::Csv => true,
+            _ => false,
         }
+    }
 
-        write!(f, "0x")?;
-        for (i, &part) in self.0.iter().rev().enumerate() {
-            if i != 0 {
-                write!(f, "_")?;
-            }
-            write!(f, "{:08x}", part)?;
+    pub fn is_pretty(self) -> bool {
+        match self {
+            OutputMode::Pretty => true,
+            _ => true,
         }
-
-        Ok(())
     }
 }
 
-fn parse_count() -> Result<u32, String> {
-    let mut args = env::args();
+pub fn do_time<F>(input: &[u32], n: u32, func: F) -> f64
+where
+    F: Fn(u32) -> u32,
+{
+    let start = Instant::now();
 
-    let prog = args.next().unwrap_or_else(|| "modprime".into());
-    let prog_name = Path::new(&prog)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("modprime");
+    let mut tmp = 0;
+    for _ in 0..n {
+        for &x in &input[..] {
+            tmp ^= func(x);
+        }
+    }
 
-    let arg = match args.next() {
-        Some(arg) => arg,
-        None => return Err(format!("Usage: {} count", prog_name)),
-    };
+    let elapsed = start.elapsed();
 
-    let count = match arg.parse::<u32>() {
-        Ok(count) => count,
-        Err(err) => return Err(format!("{}: invalid count argument: {}", prog, err)),
-    };
+    // Force use.
+    let _ = test::black_box(tmp);
 
-    Ok(count)
+    let secs = (elapsed.as_secs() as f64) + (elapsed.subsec_nanos() as f64 / 1e9);
+    secs
+}
+
+pub fn time_all<F>(
+    mode: OutputMode,
+    func_name: &str,
+    data_sets: &[(&str, &[u32])],
+    num_reps: u32,
+    target_reps: u32,
+    func: F,
+) where
+    F: Fn(u32) -> u32,
+{
+    for &(data_set_name, data_set) in data_sets {
+        let num_values = data_set.len() as u32;
+        let n = (target_reps + num_values - 1) / num_values;
+        let actual_reps = n * num_values;
+
+        for _ in 0..num_reps {
+            let secs = do_time(data_set, n, &func);
+            let ns_per_value = secs * 1e9 / (actual_reps as f64);
+
+            match mode {
+                OutputMode::Csv => {
+                    println!(
+                        "{},{},{},{:.5},{:.5}",
+                        func_name, data_set_name, n, secs, ns_per_value,
+                    );
+                }
+                OutputMode::Pretty => {
+                    println!(
+                        "{}/{}, repetitions: {}, total time (s): {:.5}, time per value (ns): {:.5}",
+                        func_name, data_set_name, n, secs, ns_per_value,
+                    );
+                }
+            }
+        }
+    }
 }
 
 fn main() {
-    let count = match parse_count() {
-        Ok(count) => count,
-        Err(err) => {
-            eprintln!("{}", err);
+    // Parse '-c' or '-p' argument.
+
+    let mut mode = None;
+
+    let mut args = env::args();
+
+    let argv0 = args.next().unwrap();
+
+    for arg in args {
+        match &arg[..] {
+            "-c" => mode = Some(OutputMode::Csv),
+            "-p" => mode = Some(OutputMode::Pretty),
+            _ => {
+                eprintln!("Usage: cargo run --release -- [-cp]");
+                eprintln!("{}: unexpected option {:?}", argv0, arg);
+                process::exit(2);
+            }
+        }
+    }
+
+    let mode = match mode {
+        Some(mode) => mode,
+        None => {
+            eprintln!("Usage: cargo run --release -- [-cp]");
+            eprintln!("Options:");
+            eprintln!("  -c        Output as CSV.");
+            eprintln!("  -p        Output as human-readable text.");
             process::exit(2);
         }
     };
 
-    let mut rng = rand::thread_rng();
+    // Prepare input.
 
-    for _ in 0..count {
-        let mut a;
-        loop {
-            a = [rng.gen(), rng.gen(), rng.gen::<u32>() & 0x01ffffff];
-            if a != [0, 0, 0] && a != [0xffffffff, 0xffffffff, 0x01ffffff] {
-                break;
-            }
-        }
-        let mut b;
-        loop {
-            b = [rng.gen(), rng.gen(), rng.gen::<u32>() & 0x01ffffff];
-            if b != [0xffffffff, 0xffffffff, 0x01ffffff] {
-                break;
-            }
-        }
-        let x: [u32; 2] = rng.gen();
+    let input_raw = include_bytes!("../flatland.txt");
 
-        let y = modprime::mod_prime(a, b, x);
-        println!(
-            "{:?},{:?},{:?},{:?}",
-            HexBigint(&a[..]),
-            HexBigint(&b[..]),
-            HexBigint(&x[..]),
-            HexBigint(&[y][..])
-        );
+    let input8 = input_raw.iter().map(|&x| x as u32).collect::<Vec<_>>();
+
+    let input32 = input_raw[..4 * (input_raw.len() / 4)]
+        .chunks(4)
+        .map(|x| {
+            (x[0] as u32) | ((x[1] as u32) << 8) | ((x[2] as u32) << 16) | ((x[3] as u32) << 24)
+        })
+        .collect::<Vec<_>>();
+
+    let data_sets = &[
+        // Flatland.txt, 8 bits at a time.
+        ("flatland-8", &input8[..]),
+        // Flatland.txt, 32 bits at a time.
+        ("flatland-32", &input32[..]),
+    ][..];
+
+    if mode.is_csv() {
+        println!("func,dataset,n,secs,nspervalue");
+    }
+
+    // Time Multiply-Mod-Prime
+    {
+        let a = test::black_box([0x94160842, 0x674333f7, 0x005e977a]);
+        let b = test::black_box([0x55387e64, 0xbdafef1f, 0x008e956a]);
+
+        time_all(mode, "mod-prime", data_sets, 10, 200_000_000, |value| {
+            modprime::mod_prime(a, b, [value, 0])
+        });
+    }
+
+    // Time Multiply-Shift (v1)
+    {
+        let a = test::black_box(0x94160842);
+
+        time_all(mode, "shift-v1", data_sets, 10, 3000_000_000, |value| {
+            shift::shift(a, value as u64)
+        });
+    }
+
+    // Time SipHash 2-4
+    {
+        let a = test::black_box(0x94160842674333f7);
+        let b = test::black_box(0x55387e64bdafef1f);
+
+        time_all(mode, "siphash-24", data_sets, 10, 100_000_000, |value| {
+            #[allow(deprecated)]
+            let mut h = SipHasher24::new_with_keys(a, b);
+            h.write_u32(value);
+            h.finish() as u32
+        });
     }
 }
