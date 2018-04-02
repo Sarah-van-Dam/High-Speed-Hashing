@@ -10,74 +10,115 @@ use test;
 // TODO: Rename variable names to be consistent.
 
 pub fn multiply_add(a: [u32; 3], b: [u32; 3], x: [u32; 2]) -> [u32; 5] {
-    // Calculate pair-wise multiplication.
-    let a0x0 = (a[0] as u64) * (x[0] as u64);
-    let a1x0 = (a[1] as u64) * (x[0] as u64);
-    let a2x0 = (a[2] as u64) * (x[0] as u64);
-    let a0x1 = (a[0] as u64) * (x[1] as u64);
-    let a1x1 = (a[1] as u64) * (x[1] as u64);
-    let a2x1 = (a[2] as u64) * (x[1] as u64);
+    // Step 1
 
-    // Calculate c = a x0.
-    let c0 = a0x0;
-    let c1 = (c0 >> 32) + a1x0;
-    let c2 = (c1 >> 32) + a2x0;
-    let c3 = c2 >> 32;
+    // Step 1.1
 
-    // Calculate d = a x = c + 2^32 a x1.
-    let d0 = c0 & 0xffffffff;
-    let d1 = (d0 >> 32) + (c1 & 0xffffffff) + a0x1;
-    let d2 = (d1 >> 32) + (c2 & 0xffffffff) + a1x1;
-    let d3 = (d2 >> 32) + (c3 & 0xffffffff) + a2x1;
-    let d4 = d3 >> 32;
+    let alpha0 = (a[0] as u64) * (x[0] as u64);
+    let alpha1 = (a[1] as u64) * (x[0] as u64);
+    let alpha2 = (a[2] as u64) * (x[0] as u64);
 
-    // TODO: We could reduce ax mod p before adding b.
+    let gamma0 = alpha0;
+    let gamma1 = (gamma0 >> 32) + alpha1;
+    let gamma2 = (gamma1 >> 32) + alpha2;
 
-    // Calculate e = d + b = a x + b.
-    let e0 = (d0 & 0xffffffff) + (b[0] as u64);
-    let e1 = (e0 >> 32) + (d1 & 0xffffffff) + (b[1] as u64);
-    let e2 = (e1 >> 32) + (d2 & 0xffffffff) + (b[2] as u64);
-    let e3 = (e2 >> 32) + (d3 & 0xffffffff);
-    let e4 = (e3 >> 32) + (d4 & 0xffffffff); // TODO: Not strictly necessary?
+    let c0 = gamma0 & 0xffffffff;
+    let c1 = gamma1 & 0xffffffff;
+    let c2 = gamma2 & 0xffffffff;
+    let c3 = gamma2 >> 32;
+
+    // Step 1.2
+
+    let alpha0 = c0;
+    let alpha1 = c1 + (a[0] as u64) * (x[1] as u64);
+    let alpha2 = c2 + (a[1] as u64) * (x[1] as u64);
+    let alpha3 = c3 + (a[2] as u64) * (x[1] as u64);
+
+    let gamma0 = alpha0;
+    let gamma1 = (gamma0 >> 32) + alpha1;
+    let gamma2 = (gamma1 >> 32) + alpha2;
+    let gamma3 = (gamma2 >> 32) + alpha3;
+
+    let d0 = gamma0 & 0xffffffff;
+    let d1 = gamma1 & 0xffffffff;
+    let d2 = gamma2 & 0xffffffff;
+    let d3 = gamma3 & 0xffffffff;
+    let d4 = gamma3 >> 32;
+
+    // Step 1.3
+
+    let alpha0 = d0 + (b[0] as u64);
+    let alpha1 = d1 + (b[1] as u64);
+    let alpha2 = d2 + (b[2] as u64);
+    let alpha3 = d3;
+    let alpha4 = d4;
+
+    let gamma0 = alpha0;
+    let gamma1 = (gamma0 >> 32) + alpha1;
+    let gamma2 = (gamma1 >> 32) + alpha2;
+    let gamma3 = (gamma2 >> 32) + alpha3;
+    let gamma4 = (gamma3 >> 32) + alpha4;
+
+    let e0 = gamma0 & 0xffffffff;
+    let e1 = gamma1 & 0xffffffff;
+    let e2 = gamma2 & 0xffffffff;
+    let e3 = gamma3 & 0xffffffff;
+    let e4 = gamma4 & 0xffffffff;
+    // No e5 part.
 
     [e0 as u32, e1 as u32, e2 as u32, e3 as u32, e4 as u32]
 }
 
-pub fn modulo(y: [u32; 5]) -> u32 {
-    // Calculate (p + 1) c + d = y.
+pub fn modulo(e: [u32; 5]) -> u32 {
+    // Step 2
 
-    let c0 = y[0]; // 32 bits
-    let c1 = y[1]; // 32 bits
-    let c2 = y[2] & 0x1ffffff; // 25 bits
+    // Step 2.1
 
-    let d0 = (y[3] << 7) | (y[2] >> 25);
-    let d1 = (y[4] << 7) | (y[3] >> 25);
-    let d2 = y[4] >> 25;
+    let l0 = e[0]; // 32 bits
+    let l1 = e[1]; // 32 bits
+    let l2 = e[2] & 0x1ffffff; // 25 bits
 
-    // Calculate e = c + d equiv y (mod p).
-    let e0 = (c0 as u64) + (d0 as u64);
-    let e1 = (e0 >> 32) + (c1 as u64) + (d1 as u64);
-    let e2 = (e1 >> 32) + (c2 as u64) + (d2 as u64);
-    let e3 = e2 >> 32;
+    // Step 2.2
 
-    debug_assert_eq!(0, e3);
+    let h0 = (e[2] >> 25) | (e[3] << 7);
+    let h1 = (e[3] >> 25) | (e[4] << 7);
+    let h2 = e[4] >> 25;
 
-    let mut e = [e0 as u32, e1 as u32, e2 as u32];
+    // Step 2.3
 
-    // Calculate e' = e mod p = y mod p.
-    //loop {
-    // Since e = a + b for a,b in [p+1], we risk e > p.
+    let alpha0 = (l0 as u64) + (h0 as u64);
+    let alpha1 = (l1 as u64) + (h1 as u64);
+    let alpha2 = (l2 as u64) + (h2 as u64);
 
-    let f0 = (e[0] as i64) - 0xffffffff;
-    let f1 = (f0 >> 32) + (e[1] as i64) - 0xffffffff;
-    let f2 = (f1 >> 32) + (e[2] as i64) - 0x1ffffff;
+    let gamma0 = alpha0;
+    let gamma1 = (gamma0 << 32) + alpha1;
+    let gamma2 = (gamma1 << 32) + alpha2;
 
-    if f2 >= 0 {
-        e = [f0 as u32, f1 as u32, f2 as u32];
-    }
-    //}
+    let s0 = gamma0 & 0xffffffff;
+    let s1 = gamma1 & 0xffffffff;
+    let s2 = gamma2 & 0xffffffff;
+    // No s3 part.
 
-    e[0] & 0x000fffff
+    // Step 3.1
+
+    let alpha0 = (s0 as i64) - 0xffffffff;
+    let alpha1 = (s1 as i64) - 0xffffffff;
+    let alpha2 = (s2 as i64) - 0x01ffffff;
+
+    let gamma0 = alpha0;
+    let gamma1 = (gamma0 >> 32) + alpha1;
+    let gamma2 = (gamma1 >> 32) + alpha2;
+
+    let t0 = (gamma0 as u64) & 0xffffffff;
+    let tnonneg = gamma2 >= 0;
+
+    // Step 3.2
+
+    let q0 = if tnonneg { t0 } else { s0 };
+
+    // Step 4.1
+
+    (q0 & 0x000fffff) as u32
 }
 
 pub fn mod_prime(a: [u32; 3], b: [u32; 3], x: [u32; 2]) -> u32 {
