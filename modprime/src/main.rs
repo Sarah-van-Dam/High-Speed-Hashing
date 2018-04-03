@@ -71,6 +71,9 @@ pub fn time_all<F>(
         let n = (target_reps + num_values - 1) / num_values;
         let actual_reps = n * num_values;
 
+        // Run through once to warm up the caches.
+        do_time(data_set, 1, &func);
+
         for _ in 0..num_reps {
             let secs = do_time(data_set, n, &func);
             let ns_per_value = secs * 1e9 / (actual_reps as f64);

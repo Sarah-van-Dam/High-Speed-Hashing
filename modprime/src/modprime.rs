@@ -129,6 +129,13 @@ pub fn mod_prime(a: [u32; 3], b: [u32; 3], x: [u32; 2]) -> u32 {
     r
 }
 
+// These attributes force the function to be available in the assembly.
+#[inline(never)]
+#[no_mangle]
+pub fn modprime_mod_prime_no_inline(a: [u32; 3], b: [u32; 3], x: [u32; 2]) -> u32 {
+    mod_prime(a, b, x)
+}
+
 #[test]
 fn test_multiply_small() {
     let r = multiply_add([1, 0, 0], [0, 0, 0], [5, 0]);
