@@ -8,12 +8,35 @@ import sys
 p = 2**89 - 1
 m = 2**20
 
+def mod_prime_gen_params():
+    a = random.randrange(1, p)
+    b = random.randrange(0, p)
+    return (a, b)
 
-def mod_prime(a, b, x):
+def mod_prime(params, x):
+    a, b = params
     return ((a*x + b) % p) % m
 
 
-def do_generate(parser, args):
+l = 20
+
+def shift_gen_params():
+    a = 2 * random.randrange(1, p//2)
+    return (a,)
+
+def shift(params, x):
+    a, = params
+    return a*x >> (64 - l)
+
+
+# (num_params, gen_params, func)
+func_mod_prime = (2, mod_prime_gen_params, mod_prime)
+func_shift = (1, shift_gen_params, shift)
+
+
+def do_generate(parser, func, args):
+    num_params, gen_params, func = func
+
     if len(args.args) < 1:
         parser.error("missing required argument: count")
     elif len(args.args) > 1:
