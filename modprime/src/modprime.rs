@@ -234,3 +234,66 @@ fn bench(bench: &mut test::Bencher) {
 
     bench.iter(|| mod_prime(a, b, x));
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+pub fn mmp31(a: u32, b: u32, x: u32) -> u32 {
+    debug_assert!(a < 0x7fffffff);
+    debug_assert!(b < 0x7fffffff);
+    debug_assert!(x < 0x7fffffff);
+
+    let q = (a as u64) * (x as u64) + (b as u64);
+    let s = ((q as u32) & 0x7fffffff) + ((q >> 31) as u32);
+    if s >= 0x7fffffff { s - 0x7fffffff } else { s }
+}
+
+//pub fn mmp31_in64(a: u32, b: u32, x: u64) -> u32 {
+//    let x0 = x & 0x3fffffff;
+//    let x1 = (x >> 30) & 0x3fffffff;
+//    let x2 = x >> 60;
+//}
+
+#[test]
+fn test_mmp31() {
+    assert_eq!(11_126_486, mmp31(1234, 5678, 9012));
+    assert_eq!(0x095df80d, mmp31(0x6d9e78c5, 0x4019affa, 0x770e288c));
+}

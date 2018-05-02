@@ -155,6 +155,35 @@ fn main() {
     }
 
     {
+        let sa = test::black_box([
+            0x9416084294160842, 0x674333f7674333f7, 0x005e977a005e977a, 0x005e977e005e977e,
+            0x9416084394160843, 0x674333f8674333f8, 0x005e977b005e977b, 0x005e977f005e977f,
+            0x8416084284160842, 0xa74333f7a74333f7, 0x305e977a305e977a, 0x305e977e305e977e,
+            0x8416084384160843, 0xa74333f8a74333f8, 0x305e977b305e977b, 0x305e977f305e977f,
+            0x9416184294161842, 0x674343f7674343f7, 0x005ea77a005ea77a, 0x006e977e006e977e,
+            0x9416184394161843, 0x674343f8674343f8, 0x005ea77b005ea77b, 0x006e977f006e977f,
+            0x8416184284161842, 0xa74343f7a74343f7, 0x305ea77a305ea77a, 0x306e977e306e977e,
+            0x8416184384161843, 0xa74343f8a74343f8, 0x305ea77b305ea77b, 0x306e977f306e977f,
+            0xf4160842f4160842, 0xc74333f7c74333f7, 0x505e977a505e977a, 0x105e977e105e977e,
+            0xf4160843f4160843, 0xc74333f8c74333f8, 0x505e977b505e977b, 0x105e977f105e977f,
+            0xf4160842f4160842, 0xc74333f7c74333f7, 0x505e977a505e977a, 0x105e977e105e977e,
+            0xf4160843f4160843, 0xc74333f8c74333f8, 0x505e977b505e977b, 0x105e977f105e977f,
+            0xf4161842f4161842, 0xc74343f7c74343f7, 0x505ea77a505ea77a, 0x106e977e106e977e,
+            0xf4161843f4161843, 0xc74343f8c74343f8, 0x505ea77b505ea77b, 0x106e977f106e977f,
+            0xf4161842f4161842, 0xc74343f7c74343f7, 0x505ea77a505ea77a, 0x106e977e106e977e,
+            0xf4161843f4161843, 0xc74343f8c74343f8, 0x505ea77b505ea77b, 0x106e977f106e977f,
+        ]);
+        let sb = test::black_box(0xc74343f7c7434ddd);
+        let a = test::black_box([0x94160842, 0x674333f7, 0x005e977a]);
+        let b = test::black_box([0x55387e64, 0xbdafef1f, 0x008e956a]);
+        let c = test::black_box([0x55347e64, 0xb12fef1f, 0x0085951a]);
+        time_all(mode, "string-poly-64-speedup", data_sets, 10, 20_000_000, |value| {
+            let x = [value as u64, value as u64];
+            string::poly64_speedup(&sa, sb, a, b, c, &x)
+        })
+    }
+
+    {
         let a = test::black_box([0x94160842, 0x674333f7, 0x005e977a]);
         let b = test::black_box([0x55387e64, 0xbdafef1f, 0x008e956a]);
         let c = test::black_box([0x55347e64, 0xb12fef1f, 0x0085951a]);

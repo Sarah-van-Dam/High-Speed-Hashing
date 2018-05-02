@@ -136,3 +136,23 @@ pub fn poly64(a: [u32; 3], b: [u32; 3], c: [u32; 3], x: &[u64]) -> u32 {
 
     (e[0] & 0xfffff) as u32
 }
+
+pub fn poly64_speedup(sa: &[u64; 64], sb: u64, a: [u32; 3], b: [u32; 3], c: [u32; 3], x: &[u64]) -> u32 {
+    use vec;
+
+    let d = (x.len() + 31) / 32;
+    let mut t = [0; 64];
+    let mut y = vec![0u64; d];
+    for i in 0..d {
+        for j in 0..32 {
+            if 32*i + j >= x.len() {
+                break;
+            }
+            t[2*j] = x[32*i + j] as u32;
+            t[2*j + 1] = (x[32*i + j] >> 32) as u32;
+        }
+        y[i] = vec::vec64x32_pair(sa, sb, &t) as u64;
+    }
+
+    poly64(a, b, c, &y)
+}
