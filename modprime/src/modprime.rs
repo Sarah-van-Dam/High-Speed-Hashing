@@ -264,9 +264,19 @@ fn bench(bench: &mut test::Bencher) {
 
 
 
+/// Implemented: three multiply-mod-prime with p = 2^31 - 1 xor'd together.
+/// h_a0,a1,a2,b0,b1,b2 : [2^64] -> [m] for m <= p
+pub fn mmp31in64(a: [u32; 3], b: [u32; 3], x: u64) -> u32 {
+    let x0 = (x & 0x3fffffff) as u32;
+    let x1 = ((x >> 30) & 0x3fffffff) as u32;
+    let x2 = ((x >> 60) & 0x3fffffff) as u32;
 
+    let q0 = mmp31(a[0], b[0], x0);
+    let q1 = mmp31(a[1], b[1], x1);
+    let q2 = mmp31(a[2], b[2], x2);
 
-
+    q0 ^ q1 ^ q2
+}
 
 
 
