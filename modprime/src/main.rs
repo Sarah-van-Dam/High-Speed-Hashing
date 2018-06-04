@@ -9,10 +9,7 @@ use std::time::Instant;
 #[allow(deprecated)]
 use std::hash::{Hasher, SipHasher};
 
-pub mod modprime;
-pub mod shift;
-pub mod vec;
-pub mod string;
+pub mod imp;
 
 #[derive(Clone, Copy, Debug)]
 pub enum OutputMode {
@@ -218,7 +215,7 @@ fn main() {
         let b = test::black_box(0x505e977b505e977b105e977f105e977f);
 
         time_all(mode, "shift-64", data_sets, 10, 200_000_000, |value| {
-            string::shift64(a, b, u64::from(value)) as u32
+            imp::shift64(a, b, u64::from(value)) as u32
         });
     }
 
@@ -228,7 +225,7 @@ fn main() {
         let b = test::black_box([0x55387e64, 0x3dafef1f, 0x322e956a]);
 
         time_all(mode, "mod-prime-30in64", data_sets, 10, 200_000_000, |value| {
-            modprime::mmp31in64(a, b, u64::from(value))
+            imp::mmp31in64(a, b, u64::from(value))
         });
     }
 
@@ -238,7 +235,7 @@ fn main() {
         let b = test::black_box([0x55387e64, 0xbdafef1f, 0x008e956a]);
 
         time_all(mode, "mod-prime-89-v2", data_sets, 10, 100_000_000, |value| {
-            string::mmp89(a, b, u64::from(value)) as u32
+            imp::mmp89(a, b, u64::from(value)) as u32
         });
     }
 
@@ -248,7 +245,7 @@ fn main() {
         let b = test::black_box([0x55387e64, 0xbdafef1f, 0x008e956a]);
 
         time_all(mode, "mod-prime-89-v1", data_sets, 10, 200_000_000, |value| {
-            modprime::mod_prime(a, b, [value, 0])
+            imp::mod_prime(a, b, [value, 0])
         });
     }
 
@@ -257,7 +254,7 @@ fn main() {
         let a = test::black_box(0x94160842);
 
         time_all(mode, "shift-v1", data_sets, 10, 3000_000_000, |value| {
-            shift::shift(a, value as u64)
+            imp::shift(a, value as u64)
         });
     }
 
@@ -304,10 +301,10 @@ fn main() {
         let b = test::black_box([0x55387e64, 0xbdafef1f, 0x008e956a]);
         let c = test::black_box([0x55347e64, 0xb12fef1f, 0x0085951a]);
         time_all_string(mode, "string-poly-64-speedup", data_sets, 10, 20_000_000, |buf| {
-            let poly = string::Poly64::new(a, b, c);
-            let prep0 = string::PairPrefixShift32x64::new(a0);
-            let prep1 = string::PairPrefixShift32x64::new(a1);
-            let mut h = string::PolySpeedup64::new(poly, prep0, prep1);
+            let poly = imp::Poly64::new(a, b, c);
+            let prep0 = imp::PairPrefixShift32x64::new(a0);
+            let prep1 = imp::PairPrefixShift32x64::new(a1);
+            let mut h = imp::PolySpeedup64::new(poly, prep0, prep1);
             for &x in buf {
                 h.write_u64(u64::from(x));
             }
@@ -320,7 +317,7 @@ fn main() {
         let b = test::black_box([0x55387e64, 0xbdafef1f, 0x008e956a]);
         let c = test::black_box([0x55347e64, 0xb12fef1f, 0x0085951a]);
         time_all_string(mode, "string-poly-64", data_sets, 10, 20_000_000, |buf| {
-            let mut h = string::Poly64::new(a, b, c);
+            let mut h = imp::Poly64::new(a, b, c);
             for &x in buf {
                 h.write_u64(u64::from(x));
             }
@@ -336,7 +333,7 @@ fn main() {
             let v0 = value as u16;
             let v1 = (value >> 16) as u16;
             let x = [v0, v1, v0, v1, v0, v1, v0, v1];
-            string::poly16(a, b, c, &x)
+            imp::poly16(a, b, c, &x)
         });
     }
 
@@ -364,7 +361,7 @@ fn main() {
         time_all(mode, "prefix-64x32-pair", data_sets, 10, 20_000_000, |value| {
             let mut x = [0; 64];
             x[63] = value;
-            string::prefix64x32_pair(&a, &x)
+            imp::prefix64x32_pair(&a, &x)
         });
     }
 
@@ -392,7 +389,7 @@ fn main() {
         time_all(mode, "vec-64x32-pair", data_sets, 10, 20_000_000, |value| {
             let mut x = [0; 64];
             x[63] = value;
-            vec::vec64x32_pair(&a, b, &x)
+            imp::vec64x32_pair(&a, b, &x)
         });
     }
 
@@ -420,7 +417,7 @@ fn main() {
         time_all(mode, "vec-64x32", data_sets, 10, 20_000_000, |value| {
             let mut x = [0; 64];
             x[63] = value;
-            vec::vec64x32(&a, b, &x)
+            imp::vec64x32(&a, b, &x)
         });
     }
 
