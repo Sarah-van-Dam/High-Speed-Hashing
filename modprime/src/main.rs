@@ -210,223 +210,370 @@ fn main() {
         println!("func,dataset,n,secs,nspervalue");
     }
 
+    // Multiply-Shift
+
+    {
+        let a = test::black_box(0x9416084294160842);
+
+        time_all(mode, "shift-u64", data_sets, 10, 100_000_000, |value| {
+            imp::shift_u64(20, a, u64::from(value)) as u32
+        });
+    }
+    {
+        let a = test::black_box(0x94160842);
+
+        time_all(mode, "shift-u32", data_sets, 10, 100_000_000, |value| {
+            imp::shift_u32(20, a, value)
+        });
+    }
+    {
+        let a = test::black_box(0x9416084294160842674333f7674333f7);
+
+        time_all(
+            mode,
+            "shift-u128-128",
+            data_sets,
+            10,
+            100_000_000,
+            |value| imp::shift_u128_128(20, a, u128::from(value)) as u32,
+        );
+    }
+    {
+        let a = test::black_box(0x941608429416084);
+        let b = test::black_box(0x505e977b505e977);
+
+        time_all(
+            mode,
+            "shift-strong-u32",
+            data_sets,
+            10,
+            100_000_000,
+            |value| imp::shift_strong_u32(20, a, b, value),
+        );
+    }
     {
         let a = test::black_box(0x9416084294160842674333f7674333f7);
         let b = test::black_box(0x505e977b505e977b105e977f105e977f);
 
-        time_all(mode, "shift-64", data_sets, 10, 200_000_000, |value| {
-            imp::shift64(a, b, u64::from(value)) as u32
-        });
+        time_all(
+            mode,
+            "shift-strong-u64-128",
+            data_sets,
+            10,
+            100_000_000,
+            |value| imp::shift_strong_u64_128(20, a, b, u64::from(value)) as u32,
+        );
     }
 
-    // Time Multiply-Mod-Prime (30-bit in 64-bit)
-    {
-        let a = test::black_box([0x14160842, 0x674333f7, 0x274e977a]);
-        let b = test::black_box([0x55387e64, 0x3dafef1f, 0x322e956a]);
+    // Multiply-Mod-Prime
 
-        time_all(mode, "mod-prime-30in64", data_sets, 10, 200_000_000, |value| {
-            imp::mmp31in64(a, b, u64::from(value))
-        });
-    }
-
-    // Time Multiply-Mod-Prime
     {
         let a = test::black_box([0x94160842, 0x674333f7, 0x005e977a]);
         let b = test::black_box([0x55387e64, 0xbdafef1f, 0x008e956a]);
 
-        time_all(mode, "mod-prime-89-v2", data_sets, 10, 100_000_000, |value| {
-            imp::mmp89(a, b, u64::from(value)) as u32
+        time_all(mode, "mmp-p89-u64", data_sets, 10, 10_000_000, |value| {
+            imp::mmp_p89_u64(20, a, b, u64::from(value)) as u32
         });
     }
+    {
+        let a = test::black_box(0x674333f7);
+        let b = test::black_box(0xbdafef1f);
 
-    // Time Multiply-Mod-Prime
+        time_all(mode, "mmp-p31-u30", data_sets, 10, 10_000_000, |value| {
+            imp::mmp_p31_u30(20, a, b, value & 0x3fffffff)
+        });
+    }
+    {
+        let a = test::black_box([0x39410842, 0x674333f7, 0x005e977a]);
+        let b = test::black_box([0x3d587e64, 0xbdafef1f, 0x008e956a]);
+
+        time_all(mode, "mmp-p31-u64", data_sets, 10, 10_000_000, |value| {
+            imp::mmp_p31_u64(20, a, b, u64::from(value))
+        });
+    }
+    {
+        let a = test::black_box(0x674333f7005e977a);
+        let b = test::black_box(0xbdafef1f008e956a);
+
+        time_all(
+            mode,
+            "mmp-p61-u60-128",
+            data_sets,
+            10,
+            10_000_000,
+            |value| imp::mmp_p61_u60_128(20, a, b, u64::from(value)) as u32,
+        );
+    }
+
+    // Vectorized
+
+    {
+        let a = test::black_box([
+            0x9416084294160842,
+            0x674333f7674333f7,
+            0x005e977a005e977a,
+            0x005e977e005e977e,
+            0x9416084394160843,
+            0x674333f8674333f8,
+            0x005e977b005e977b,
+            0x005e977f005e977f,
+            0x8416084284160842,
+            0xa74333f7a74333f7,
+            0x305e977a305e977a,
+            0x305e977e305e977e,
+            0x8416084384160843,
+            0xa74333f8a74333f8,
+            0x305e977b305e977b,
+            0x305e977f305e977f,
+            0x9416184294161842,
+            0x674343f7674343f7,
+            0x005ea77a005ea77a,
+            0x006e977e006e977e,
+            0x9416184394161843,
+            0x674343f8674343f8,
+            0x005ea77b005ea77b,
+            0x006e977f006e977f,
+            0x8416184284161842,
+            0xa74343f7a74343f7,
+            0x305ea77a305ea77a,
+            0x306e977e306e977e,
+            0x8416184384161843,
+            0xa74343f8a74343f8,
+            0x305ea77b305ea77b,
+            0x306e977f306e977f,
+            0xf4160842f4160842,
+            0xc74333f7c74333f7,
+            0x505e977a505e977a,
+            0x105e977e105e977e,
+            0xf4160843f4160843,
+            0xc74333f8c74333f8,
+            0x505e977b505e977b,
+            0x105e977f105e977f,
+            0xf4160842f4160842,
+            0xc74333f7c74333f7,
+            0x505e977a505e977a,
+            0x105e977e105e977e,
+            0xf4160843f4160843,
+            0xc74333f8c74333f8,
+            0x505e977b505e977b,
+            0x105e977f105e977f,
+            0xf4161842f4161842,
+            0xc74343f7c74343f7,
+            0x505ea77a505ea77a,
+            0x106e977e106e977e,
+            0xf4161843f4161843,
+            0xc74343f8c74343f8,
+            0x505ea77b505ea77b,
+            0x106e977f106e977f,
+            0xf4161842f4161842,
+            0xc74343f7c74343f7,
+            0x505ea77a505ea77a,
+            0x106e977e106e977e,
+            0xf4161843f4161843,
+            0xc74343f8c74343f8,
+            0x505ea77b505ea77b,
+            0x106e977f106e977f,
+            0xc74343f7c7434ddd,
+        ]);
+
+        time_all(
+            mode,
+            "pair-prefix-shift-u64-d32",
+            data_sets,
+            10,
+            10_000_000,
+            |value| {
+                let mut buf = [0; 29];
+                buf[3] = value;
+                let mut h = imp::PairPrefixShiftU64D32::new(a);
+                for &x in &buf[..] {
+                    h.write_u64(u64::from(x));
+                }
+                h.finish()
+            },
+        );
+    }
+
+    // Polynomial
+
     {
         let a = test::black_box([0x94160842, 0x674333f7, 0x005e977a]);
         let b = test::black_box([0x55387e64, 0xbdafef1f, 0x008e956a]);
+        let c = test::black_box([0x55347e64, 0xb12fef1f, 0x0085951a]);
 
-        time_all(mode, "mod-prime-89-v1", data_sets, 10, 200_000_000, |value| {
-            imp::mod_prime(a, b, [value, 0])
-        });
+        time_all_string(mode, "poly-u64", data_sets, 10, 20_000_000, |buf| {
+            let mut h = imp::PolyU64::new(a, b, c);
+            for &x in buf {
+                h.write_u64(u64::from(x));
+            }
+            h.finish()
+        })
     }
-
-    // Time Multiply-Shift (v1)
-    {
-        let a = test::black_box(0x94160842);
-
-        time_all(mode, "shift-v1", data_sets, 10, 3000_000_000, |value| {
-            imp::shift(a, value as u64)
-        });
-    }
-
     {
         let a0 = test::black_box([
-            0x9416084294160842, 0x674333f7674333f7, 0x005e977a005e977a, 0x005e977e005e977e,
-            0x9416084394160843, 0x674333f8674333f8, 0x005e977b005e977b, 0x005e977f005e977f,
-            0x8416084284160842, 0xa74333f7a74333f7, 0x305e977a305e977a, 0x305e977e305e977e,
-            0x8416084384160843, 0xa74333f8a74333f8, 0x305e977b305e977b, 0x305e977f305e977f,
-            0x9416184294161842, 0x674343f7674343f7, 0x005ea77a005ea77a, 0x006e977e006e977e,
-            0x9416184394161843, 0x674343f8674343f8, 0x005ea77b005ea77b, 0x006e977f006e977f,
-            0x8416184284161842, 0xa74343f7a74343f7, 0x305ea77a305ea77a, 0x306e977e306e977e,
-            0x8416184384161843, 0xa74343f8a74343f8, 0x305ea77b305ea77b, 0x306e977f306e977f,
-            0xf4160842f4160842, 0xc74333f7c74333f7, 0x505e977a505e977a, 0x105e977e105e977e,
-            0xf4160843f4160843, 0xc74333f8c74333f8, 0x505e977b505e977b, 0x105e977f105e977f,
-            0xf4160842f4160842, 0xc74333f7c74333f7, 0x505e977a505e977a, 0x105e977e105e977e,
-            0xf4160843f4160843, 0xc74333f8c74333f8, 0x505e977b505e977b, 0x105e977f105e977f,
-            0xf4161842f4161842, 0xc74343f7c74343f7, 0x505ea77a505ea77a, 0x106e977e106e977e,
-            0xf4161843f4161843, 0xc74343f8c74343f8, 0x505ea77b505ea77b, 0x106e977f106e977f,
-            0xf4161842f4161842, 0xc74343f7c74343f7, 0x505ea77a505ea77a, 0x106e977e106e977e,
-            0xf4161843f4161843, 0xc74343f8c74343f8, 0x505ea77b505ea77b, 0x106e977f106e977f,
+            0x9416084294160842,
+            0x674333f7674333f7,
+            0x005e977a005e977a,
+            0x005e977e005e977e,
+            0x9416084394160843,
+            0x674333f8674333f8,
+            0x005e977b005e977b,
+            0x005e977f005e977f,
+            0x8416084284160842,
+            0xa74333f7a74333f7,
+            0x305e977a305e977a,
+            0x305e977e305e977e,
+            0x8416084384160843,
+            0xa74333f8a74333f8,
+            0x305e977b305e977b,
+            0x305e977f305e977f,
+            0x9416184294161842,
+            0x674343f7674343f7,
+            0x005ea77a005ea77a,
+            0x006e977e006e977e,
+            0x9416184394161843,
+            0x674343f8674343f8,
+            0x005ea77b005ea77b,
+            0x006e977f006e977f,
+            0x8416184284161842,
+            0xa74343f7a74343f7,
+            0x305ea77a305ea77a,
+            0x306e977e306e977e,
+            0x8416184384161843,
+            0xa74343f8a74343f8,
+            0x305ea77b305ea77b,
+            0x306e977f306e977f,
+            0xf4160842f4160842,
+            0xc74333f7c74333f7,
+            0x505e977a505e977a,
+            0x105e977e105e977e,
+            0xf4160843f4160843,
+            0xc74333f8c74333f8,
+            0x505e977b505e977b,
+            0x105e977f105e977f,
+            0xf4160842f4160842,
+            0xc74333f7c74333f7,
+            0x505e977a505e977a,
+            0x105e977e105e977e,
+            0xf4160843f4160843,
+            0xc74333f8c74333f8,
+            0x505e977b505e977b,
+            0x105e977f105e977f,
+            0xf4161842f4161842,
+            0xc74343f7c74343f7,
+            0x505ea77a505ea77a,
+            0x106e977e106e977e,
+            0xf4161843f4161843,
+            0xc74343f8c74343f8,
+            0x505ea77b505ea77b,
+            0x106e977f106e977f,
+            0xf4161842f4161842,
+            0xc74343f7c74343f7,
+            0x505ea77a505ea77a,
+            0x106e977e106e977e,
+            0xf4161843f4161843,
+            0xc74343f8c74343f8,
+            0x505ea77b505ea77b,
+            0x106e977f106e977f,
             0xc74343f7c7434ddd,
         ]);
         let a1 = test::black_box([
-            0x8416084294160842, 0x674333f7674333f7, 0x005e977a005e977a, 0x005e977e005e977e,
-            0x9416084394160843, 0x674333f8674333f8, 0x005e977b005e977b, 0x005e977f005e977f,
-            0x8416084284160842, 0xa74333f7a74333f7, 0x305e977a305e977a, 0x305e977e305e977e,
-            0x8416084384160843, 0xa74333f8a74333f8, 0x305e977b305e977b, 0x305e977f305e977f,
-            0x9416184294161842, 0x674343f7674343f7, 0x005ea77a005ea77a, 0x006e977e006e977e,
-            0x9416184394161843, 0x674343f8674343f8, 0x005ea77b005ea77b, 0x006e977f006e977f,
-            0x8416184284161842, 0xa74343f7a74343f7, 0x305ea77a305ea77a, 0x306e977e306e977e,
-            0x8416184384161843, 0xa74343f8a74343f8, 0x305ea77b305ea77b, 0x306e977f306e977f,
-            0xf4160842f4160842, 0xc74333f7c74333f7, 0x505e977a505e977a, 0x105e977e105e977e,
-            0xf4160843f4160843, 0xc74333f8c74333f8, 0x505e977b505e977b, 0x105e977f105e977f,
-            0xf4160842f4160842, 0xc74333f7c74333f7, 0x505e977a505e977a, 0x105e977e105e977e,
-            0xf4160843f4160843, 0xc74333f8c74333f8, 0x505e977b505e977b, 0x105e977f105e977f,
-            0xf4161842f4161842, 0xc74343f7c74343f7, 0x505ea77a505ea77a, 0x106e977e106e977e,
-            0xf4161843f4161843, 0xc74343f8c74343f8, 0x505ea77b505ea77b, 0x106e977f106e977f,
-            0xf4161842f4161842, 0xc74343f7c74343f7, 0x505ea77a505ea77a, 0x106e977e106e977e,
-            0xf4161843f4161843, 0xc74343f8c74343f8, 0x505ea77b505ea77b, 0x106e977f106e977f,
+            0x8416084294160842,
+            0x674333f7674333f7,
+            0x005e977a005e977a,
+            0x005e977e005e977e,
+            0x9416084394160843,
+            0x674333f8674333f8,
+            0x005e977b005e977b,
+            0x005e977f005e977f,
+            0x8416084284160842,
+            0xa74333f7a74333f7,
+            0x305e977a305e977a,
+            0x305e977e305e977e,
+            0x8416084384160843,
+            0xa74333f8a74333f8,
+            0x305e977b305e977b,
+            0x305e977f305e977f,
+            0x9416184294161842,
+            0x674343f7674343f7,
+            0x005ea77a005ea77a,
+            0x006e977e006e977e,
+            0x9416184394161843,
+            0x674343f8674343f8,
+            0x005ea77b005ea77b,
+            0x006e977f006e977f,
+            0x8416184284161842,
+            0xa74343f7a74343f7,
+            0x305ea77a305ea77a,
+            0x306e977e306e977e,
+            0x8416184384161843,
+            0xa74343f8a74343f8,
+            0x305ea77b305ea77b,
+            0x306e977f306e977f,
+            0xf4160842f4160842,
+            0xc74333f7c74333f7,
+            0x505e977a505e977a,
+            0x105e977e105e977e,
+            0xf4160843f4160843,
+            0xc74333f8c74333f8,
+            0x505e977b505e977b,
+            0x105e977f105e977f,
+            0xf4160842f4160842,
+            0xc74333f7c74333f7,
+            0x505e977a505e977a,
+            0x105e977e105e977e,
+            0xf4160843f4160843,
+            0xc74333f8c74333f8,
+            0x505e977b505e977b,
+            0x105e977f105e977f,
+            0xf4161842f4161842,
+            0xc74343f7c74343f7,
+            0x505ea77a505ea77a,
+            0x106e977e106e977e,
+            0xf4161843f4161843,
+            0xc74343f8c74343f8,
+            0x505ea77b505ea77b,
+            0x106e977f106e977f,
+            0xf4161842f4161842,
+            0xc74343f7c74343f7,
+            0x505ea77a505ea77a,
+            0x106e977e106e977e,
+            0xf4161843f4161843,
+            0xc74343f8c74343f8,
+            0x505ea77b505ea77b,
+            0x106e977f106e977f,
             0xc74343f7c7434ddd,
         ]);
         let a = test::black_box([0x94160842, 0x674333f7, 0x005e977a]);
         let b = test::black_box([0x55387e64, 0xbdafef1f, 0x008e956a]);
         let c = test::black_box([0x55347e64, 0xb12fef1f, 0x0085951a]);
-        time_all_string(mode, "string-poly-64-speedup", data_sets, 10, 20_000_000, |buf| {
-            let poly = imp::Poly64::new(a, b, c);
-            let prep0 = imp::PairPrefixShift32x64::new(a0);
-            let prep1 = imp::PairPrefixShift32x64::new(a1);
-            let mut h = imp::PolySpeedup64::new(poly, prep0, prep1);
-            for &x in buf {
-                h.write_u64(u64::from(x));
-            }
-            h.finish()
-        })
+
+        time_all_string(
+            mode,
+            "preproc-poly-u64-d32",
+            data_sets,
+            10,
+            20_000_000,
+            |buf| {
+                let poly = imp::PolyU64::new(a, b, c);
+                let prep0 = imp::PairPrefixShiftU64D32::new(a0);
+                let prep1 = imp::PairPrefixShiftU64D32::new(a1);
+                let mut h = imp::PreprocPolyU64D32::new(poly, prep0, prep1);
+                for &x in buf {
+                    h.write_u64(u64::from(x));
+                }
+                h.finish()
+            },
+        )
     }
 
-    {
-        let a = test::black_box([0x94160842, 0x674333f7, 0x005e977a]);
-        let b = test::black_box([0x55387e64, 0xbdafef1f, 0x008e956a]);
-        let c = test::black_box([0x55347e64, 0xb12fef1f, 0x0085951a]);
-        time_all_string(mode, "string-poly-64", data_sets, 10, 20_000_000, |buf| {
-            let mut h = imp::Poly64::new(a, b, c);
-            for &x in buf {
-                h.write_u64(u64::from(x));
-            }
-            h.finish()
-        })
-    }
+    // SipHash
 
-    {
-        let a = test::black_box(0x94160842);
-        let b = test::black_box(0x674333f7);
-        let c = test::black_box(0x005e977a);
-        time_all(mode, "string-poly-16", data_sets, 10, 50_000_000, |value| {
-            let v0 = value as u16;
-            let v1 = (value >> 16) as u16;
-            let x = [v0, v1, v0, v1, v0, v1, v0, v1];
-            imp::poly16(a, b, c, &x)
-        });
-    }
-
-    // Time Vector 64x32 (pair)
-    {
-        let a = test::black_box([
-            0x9416084294160842, 0x674333f7674333f7, 0x005e977a005e977a, 0x005e977e005e977e,
-            0x9416084394160843, 0x674333f8674333f8, 0x005e977b005e977b, 0x005e977f005e977f,
-            0x8416084284160842, 0xa74333f7a74333f7, 0x305e977a305e977a, 0x305e977e305e977e,
-            0x8416084384160843, 0xa74333f8a74333f8, 0x305e977b305e977b, 0x305e977f305e977f,
-            0x9416184294161842, 0x674343f7674343f7, 0x005ea77a005ea77a, 0x006e977e006e977e,
-            0x9416184394161843, 0x674343f8674343f8, 0x005ea77b005ea77b, 0x006e977f006e977f,
-            0x8416184284161842, 0xa74343f7a74343f7, 0x305ea77a305ea77a, 0x306e977e306e977e,
-            0x8416184384161843, 0xa74343f8a74343f8, 0x305ea77b305ea77b, 0x306e977f306e977f,
-            0xf4160842f4160842, 0xc74333f7c74333f7, 0x505e977a505e977a, 0x105e977e105e977e,
-            0xf4160843f4160843, 0xc74333f8c74333f8, 0x505e977b505e977b, 0x105e977f105e977f,
-            0xf4160842f4160842, 0xc74333f7c74333f7, 0x505e977a505e977a, 0x105e977e105e977e,
-            0xf4160843f4160843, 0xc74333f8c74333f8, 0x505e977b505e977b, 0x105e977f105e977f,
-            0xf4161842f4161842, 0xc74343f7c74343f7, 0x505ea77a505ea77a, 0x106e977e106e977e,
-            0xf4161843f4161843, 0xc74343f8c74343f8, 0x505ea77b505ea77b, 0x106e977f106e977f,
-            0xf4161842f4161842, 0xc74343f7c74343f7, 0x505ea77a505ea77a, 0x106e977e106e977e,
-            0xf4161843f4161843, 0xc74343f8c74343f8, 0x505ea77b505ea77b, 0x106e977f106e977f,
-            0xc74343f7c7434ddd,
-        ]);
-        time_all(mode, "prefix-64x32-pair", data_sets, 10, 20_000_000, |value| {
-            let mut x = [0; 64];
-            x[63] = value;
-            imp::prefix64x32_pair(&a, &x)
-        });
-    }
-
-    // Time Vector 64x32 (pair)
-    {
-        let a = test::black_box([
-            0x9416084294160842, 0x674333f7674333f7, 0x005e977a005e977a, 0x005e977e005e977e,
-            0x9416084394160843, 0x674333f8674333f8, 0x005e977b005e977b, 0x005e977f005e977f,
-            0x8416084284160842, 0xa74333f7a74333f7, 0x305e977a305e977a, 0x305e977e305e977e,
-            0x8416084384160843, 0xa74333f8a74333f8, 0x305e977b305e977b, 0x305e977f305e977f,
-            0x9416184294161842, 0x674343f7674343f7, 0x005ea77a005ea77a, 0x006e977e006e977e,
-            0x9416184394161843, 0x674343f8674343f8, 0x005ea77b005ea77b, 0x006e977f006e977f,
-            0x8416184284161842, 0xa74343f7a74343f7, 0x305ea77a305ea77a, 0x306e977e306e977e,
-            0x8416184384161843, 0xa74343f8a74343f8, 0x305ea77b305ea77b, 0x306e977f306e977f,
-            0xf4160842f4160842, 0xc74333f7c74333f7, 0x505e977a505e977a, 0x105e977e105e977e,
-            0xf4160843f4160843, 0xc74333f8c74333f8, 0x505e977b505e977b, 0x105e977f105e977f,
-            0xf4160842f4160842, 0xc74333f7c74333f7, 0x505e977a505e977a, 0x105e977e105e977e,
-            0xf4160843f4160843, 0xc74333f8c74333f8, 0x505e977b505e977b, 0x105e977f105e977f,
-            0xf4161842f4161842, 0xc74343f7c74343f7, 0x505ea77a505ea77a, 0x106e977e106e977e,
-            0xf4161843f4161843, 0xc74343f8c74343f8, 0x505ea77b505ea77b, 0x106e977f106e977f,
-            0xf4161842f4161842, 0xc74343f7c74343f7, 0x505ea77a505ea77a, 0x106e977e106e977e,
-            0xf4161843f4161843, 0xc74343f8c74343f8, 0x505ea77b505ea77b, 0x106e977f106e977f,
-        ]);
-        let b = test::black_box(0xc74343f7c7434ddd);
-        time_all(mode, "vec-64x32-pair", data_sets, 10, 20_000_000, |value| {
-            let mut x = [0; 64];
-            x[63] = value;
-            imp::vec64x32_pair(&a, b, &x)
-        });
-    }
-
-    // Time Vector 64x32
-    {
-        let a = test::black_box([
-            0x9416084294160842, 0x674333f7674333f7, 0x005e977a005e977a, 0x005e977e005e977e,
-            0x9416084394160843, 0x674333f8674333f8, 0x005e977b005e977b, 0x005e977f005e977f,
-            0x8416084284160842, 0xa74333f7a74333f7, 0x305e977a305e977a, 0x305e977e305e977e,
-            0x8416084384160843, 0xa74333f8a74333f8, 0x305e977b305e977b, 0x305e977f305e977f,
-            0x9416184294161842, 0x674343f7674343f7, 0x005ea77a005ea77a, 0x006e977e006e977e,
-            0x9416184394161843, 0x674343f8674343f8, 0x005ea77b005ea77b, 0x006e977f006e977f,
-            0x8416184284161842, 0xa74343f7a74343f7, 0x305ea77a305ea77a, 0x306e977e306e977e,
-            0x8416184384161843, 0xa74343f8a74343f8, 0x305ea77b305ea77b, 0x306e977f306e977f,
-            0xf4160842f4160842, 0xc74333f7c74333f7, 0x505e977a505e977a, 0x105e977e105e977e,
-            0xf4160843f4160843, 0xc74333f8c74333f8, 0x505e977b505e977b, 0x105e977f105e977f,
-            0xf4160842f4160842, 0xc74333f7c74333f7, 0x505e977a505e977a, 0x105e977e105e977e,
-            0xf4160843f4160843, 0xc74333f8c74333f8, 0x505e977b505e977b, 0x105e977f105e977f,
-            0xf4161842f4161842, 0xc74343f7c74343f7, 0x505ea77a505ea77a, 0x106e977e106e977e,
-            0xf4161843f4161843, 0xc74343f8c74343f8, 0x505ea77b505ea77b, 0x106e977f106e977f,
-            0xf4161842f4161842, 0xc74343f7c74343f7, 0x505ea77a505ea77a, 0x106e977e106e977e,
-            0xf4161843f4161843, 0xc74343f8c74343f8, 0x505ea77b505ea77b, 0x106e977f106e977f,
-        ]);
-        let b = test::black_box(0xc74343f7c7434ddd);
-        time_all(mode, "vec-64x32", data_sets, 10, 20_000_000, |value| {
-            let mut x = [0; 64];
-            x[63] = value;
-            imp::vec64x32(&a, b, &x)
-        });
-    }
-
-    // Time SipHash
     {
         let a = test::black_box(0x94160842674333f7);
         let b = test::black_box(0x55387e64bdafef1f);
 
-        time_all(mode, "siphash", data_sets, 10, 100_000_000, |value| {
+        time_all(mode, "siphash", data_sets, 10, 10_000_000, |value| {
             #[allow(deprecated)]
             let mut h = SipHasher::new_with_keys(a, b);
             h.write_u32(value);
