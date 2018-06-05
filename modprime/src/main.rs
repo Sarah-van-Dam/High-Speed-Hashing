@@ -316,7 +316,7 @@ where
     }
 }
 
-fn experiment_2(mode: OutputMode, input_raw: &[u8]) {
+pub fn experiment_2(mode: OutputMode, input_raw: &[u8]) {
     let input_raw = &input_raw[..input_raw.len() & !255];
 
     let mut input_32 = Vec::new();
@@ -333,14 +333,59 @@ fn experiment_2(mode: OutputMode, input_raw: &[u8]) {
         input_64.push(chunk_64);
     }
 
-    let rep = 10;
-    let num = 2000;
+    let input_32 = test::black_box(&input_32[..]);
+    let input_64 = test::black_box(&input_64[..]);
+
+    let samples = 10;
+    let reps = 2000;
+
+    let config = (mode, samples);
 
     if mode.is_csv() {
         println!("scheme,nspervalue");
     }
 
+    struct Spec<'a, T: 'a> {
+        config: (OutputMode, u32),
+        family: &'a str,
+        input: (u32, &'a [T]),
+    }
+
+    impl<'a, T: 'a> Spec<'a, T> {
+        fn sample<F>(&self, mut func: F)
+        where
+            F: FnMut(&T) -> u32,
+        {
+            let (mode, samples) = self.config;
+            let family = self.family;
+            let (reps, input) = self.input;
+
+            for _ in 0..samples {
+                let nanos = time_nanos_slice_with_state(reps, input, 0, |value, state| {
+                    *state ^= func(value);
+                });
+
+                match mode {
+                    OutputMode::Pretty => {
+                        println!("Family: {}; ns/value: {:.6}", family, nanos);
+                    }
+                    OutputMode::Csv => {
+                        println!("{},{}", family, nanos);
+                    }
+                }
+            }
+        }
+    }
+
+    // Vector-Shift
+
     {
+        let spec = Spec {
+            config,
+            family: "vector-shift",
+            input: (reps, input_32),
+        };
+
         let a = test::black_box([
             0xa32b511bb9419925,
             0x468967dfa5b55d7c,
@@ -408,24 +453,25 @@ fn experiment_2(mode: OutputMode, input_raw: &[u8]) {
             0xc176a7a265736f18,
             0xa8ce3b04fbd2e1d3,
         ]);
-        time_2(
-            mode,
-            rep,
-            num,
-            "vector-shift",
-            &input_32[..],
-            |input, tmp| {
-                for chunk in input {
-                    let mut h = imp::VectorShiftU32D64::new(a);
-                    for &value in &chunk[..] {
-                        h.write_u32(value);
-                    }
-                    *tmp ^= h.finish(20);
-                }
-            },
-        );
+
+        spec.sample(|chunk| {
+            let mut h = imp::VectorShiftU32D64::new(a);
+            for &x in &chunk[..] {
+                h.write_u32(x);
+            }
+            h.finish(20)
+        });
     }
+
+    // Pair-Shift
+
     {
+        let spec = Spec {
+            config,
+            family: "pair-shift",
+            input: (reps, input_64),
+        };
+
         let a = test::black_box([
             0x63b92c3f6df33488,
             0xa2207bc53adff964,
@@ -493,14 +539,13 @@ fn experiment_2(mode: OutputMode, input_raw: &[u8]) {
             0x1d53acb7d0ce02aa,
             0xc6f31d83502a08d0,
         ]);
-        time_2(mode, rep, num, "pair-shift", &input_64[..], |input, tmp| {
-            for chunk in input {
-                let mut h = imp::PairShiftU64D32::new(a);
-                for &value in &chunk[..] {
-                    h.write_u64(value);
-                }
-                *tmp ^= h.finish(20) as u32;
+
+        spec.sample(|chunk| {
+            let mut h = imp::PairShiftU64D32::new(a);
+            for &x in &chunk[..] {
+                h.write_u64(x);
             }
+            h.finish(20)
         });
     }
 }
@@ -731,7 +776,7 @@ fn main() {
         }
     };
 
-    let num = 1;
+    let num = 2;
 
     match num {
         1 => experiment_1(mode, &input_raw),
