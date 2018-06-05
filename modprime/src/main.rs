@@ -1,13 +1,18 @@
 #![feature(test, sip_hash_13)]
 
+extern crate byteorder;
 extern crate test;
 
 use std::env;
+use std::fs::File;
+use std::io::Read;
 use std::process;
 use std::time::Instant;
 
 #[allow(deprecated)]
 use std::hash::{Hasher, SipHasher};
+
+use byteorder::ByteOrder;
 
 pub mod imp;
 
@@ -154,7 +159,148 @@ pub fn time_all_string<T, F>(
     }
 }
 
+fn time_1<T, F>(mode: OutputMode, rep: u32, num: u32, scheme: &str, bits: u32, is_128: bool, input: &[T], func: F)
+where
+    F: Fn(&[T], &mut u32),
+{
+    let input = test::black_box(input);
+
+    for _ in 0..rep {
+        let mut tmp = 0;
+
+        let start = Instant::now();
+        for _ in 0..num {
+            func(input, &mut tmp);
+        }
+        let elapsed = start.elapsed();
+
+        let _ = test::black_box(tmp);
+
+        let secs = (elapsed.as_secs() as f64) + (elapsed.subsec_nanos() as f64 / 1e9);
+        let nspervalue = secs / (num as f64) / (input.len() as f64) * 1e9;
+
+        match mode {
+            OutputMode::Pretty => {
+                println!("Scheme: {}, input bit-length: {}, 128-bit: {}; ns/value: {:.6}", scheme, bits, is_128, nspervalue);
+            }
+            OutputMode::Csv => {
+                let is_128 = if is_128 { "TRUE" } else { "FALSE" };
+                println!("{},{},{},{}", scheme, bits, is_128, nspervalue);
+            }
+        }
+    }
+}
+
+
+fn experiment_1(mode: OutputMode, input_raw: &[u8]) {
+    let input_raw = &input_raw[..input_raw.len() & !3];
+
+    let mut input_raw_u32 = vec![0; input_raw.len() / 4];
+    byteorder::BigEndian::read_u32_into(input_raw, &mut input_raw_u32[..]);
+
+    let input_32 = input_raw_u32.iter().map(|&value| value & 0x3fffffff).collect::<Vec<_>>();
+    let input_64 = input_32.iter().map(|&value| u64::from(value)).collect::<Vec<_>>();
+    let input_128 = input_32.iter().map(|&value| u128::from(value)).collect::<Vec<_>>();
+
+    let rep = 10;
+    let num = 1000;
+
+    if mode.is_csv() {
+        println!("scheme,bits,is128,nspervalue");
+    }
+
+    // Shift
+
+    {
+        let a = test::black_box(0x3bca40c7);
+        time_1(mode, rep, num, "shift", 32, false, &input_32[..], |input, tmp| {
+            for &value in input {
+                *tmp ^= imp::shift_u32(20, a, value);
+            }
+        });
+    }
+    {
+        let a = test::black_box(0xa570f20b9bd5adfb);
+        time_1(mode, rep, num, "shift", 64, false, &input_64[..], |input, tmp| {
+            for &value in input {
+                *tmp ^= imp::shift_u64(20, a, value) as u32;
+            }
+        });
+    }
+    {
+        let a = test::black_box(0x2cb56e50f9538749b4a1648382ba0d59);
+        time_1(mode, rep, num, "shift", 128, true, &input_128[..], |input, tmp| {
+            for &value in input {
+                *tmp ^= imp::shift_u128_128(20, a, value) as u32;
+            }
+        });
+    }
+    {
+        let a = test::black_box(0x9cb37f1a);
+        let b = test::black_box(0x2d8b1736);
+        time_1(mode, rep, num, "shift-strong", 32, false, &input_32[..], |input, tmp| {
+            for &value in input {
+                *tmp ^= imp::shift_strong_u32(20, a, b, value) as u32;
+            }
+        });
+    }
+    {
+        let a = test::black_box(0x6865db19e3d1b464);
+        let b = test::black_box(0x583bc159d427a991);
+        time_1(mode, rep, num, "shift-strong", 64, true, &input_64[..], |input, tmp| {
+            for &value in input {
+                *tmp ^= imp::shift_strong_u64_128(20, a, b, value) as u32;
+            }
+        });
+    }
+
+    // Multiply-Mod-Prime
+
+    {
+        let a = test::black_box(0x40ed8147);
+        let b = test::black_box(0x64b07a26);
+        time_1(mode, rep, num, "mmp", 30, false, &input_32[..], |input, tmp| {
+            for &value in input {
+                *tmp ^= imp::mmp_p31_u30(20, a, b, value);
+            }
+        });
+    }
+    {
+        let a = test::black_box([0x68dc5b2d, 0x29ad0bce, 0x278a331a]);
+        let b = test::black_box([0x3e4f5b23, 0x2e47ea16, 0x3c665bad]);
+        time_1(mode, rep, num, "mmp-triple", 64, false, &input_64[..], |input, tmp| {
+            for &value in input {
+                *tmp ^= imp::mmp_p31_u64(20, a, b, value);
+            }
+        });
+    }
+    {
+        let a = test::black_box(0x02f52fcd0b6474c3);
+        let b = test::black_box(0x0cb11e6766f6e421);
+        time_1(mode, rep, num, "mmp", 60, true, &input_32[..], |input, tmp| {
+            for &value in input {
+                *tmp ^= imp::mmp_p61_u60_128(20, a, b, u64::from(value)) as u32;
+            }
+        });
+    }
+    {
+        let a = test::black_box([0xc543be39, 0xf663c8a4, 0x017193ad]);
+        let b = test::black_box([0x180375ec, 0xd6fbb57d, 0x0010c0af]);
+        time_1(mode, rep, num, "mmp", 64, false, &input_64[..], |input, tmp| {
+            for &value in input {
+                *tmp ^= imp::mmp_p89_u64(20, a, b, value) as u32;
+            }
+        });
+    }
+}
+
 fn main() {
+    let mut input_raw = Vec::new();
+    {
+        let mut file = File::open("input.txt").unwrap();
+        file.read_to_end(&mut input_raw).unwrap();
+    }
+
     // Parse '-c' or '-p' argument.
 
     let mut mode = None;
@@ -186,29 +332,17 @@ fn main() {
         }
     };
 
-    // Prepare input.
+    let num = 1;
 
-    let input_raw = include_bytes!("../flatland.txt");
-
-    let input8 = input_raw.iter().map(|&x| x as u32).collect::<Vec<_>>();
-
-    let input32 = input_raw[..4 * (input_raw.len() / 4)]
-        .chunks(4)
-        .map(|x| {
-            (x[0] as u32) | ((x[1] as u32) << 8) | ((x[2] as u32) << 16) | ((x[3] as u32) << 24)
-        })
-        .collect::<Vec<_>>();
-
-    let data_sets = &[
-        // Flatland.txt, 8 bits at a time.
-        ("flatland-8", &input8[..]),
-        // Flatland.txt, 32 bits at a time.
-        ("flatland-32", &input32[..]),
-    ][..];
-
-    if mode.is_csv() {
-        println!("func,dataset,n,secs,nspervalue");
+    match num {
+        1 => experiment_1(mode, &input_raw),
+        _ => panic!(),
     }
+
+    /*
+
+    panic!();
+
 
     // Multiply-Shift
 
@@ -346,6 +480,91 @@ fn main() {
             0x505e977a505e977a,
             0x105e977e105e977e,
             0xf4160843f4160843,
+            0x505e977b505e977b,
+            0x105e977f105e977f,
+            0xf4160842f4160842,
+            0xc74333f7c74333f7,
+            0x505e977a505e977a,
+            0x105e977e105e977e,
+            0xf4160843f4160843,
+            0xc74333f8c74333f8,
+            0x505e977b505e977b,
+            0x105e977f105e977f,
+            0xf4161842f4161842,
+            0xc74343f7c74343f7,
+            0x505ea77a505ea77a,
+            0x106e977e106e977e,
+            0xf4161843f4161843,
+            0xc74343f8c74343f8,
+            0x505ea77b505ea77b,
+            0x106e977f106e977f,
+            0xf4161842f4161842,
+            0xc74343f7c74343f7,
+            0x505ea77a505ea77a,
+            0x106e977e106e977e,
+            0xf4161843f4161843,
+            0xc74343f8c74343f8,
+            0x505ea77b505ea77b,
+            0x106e977f106e977f,
+            0xc74343f7c7434ddd,
+        ]);
+
+        time_all(
+            mode,
+            "vector-shift-u32-d64",
+            data_sets,
+            10,
+            10_000_000,
+            |value| {
+                let mut buf = [0; 29];
+                buf[3] = value;
+                let mut h = imp::VectorShiftU32D64::new(a);
+                for &x in &buf[..] {
+                    h.write_u32(x);
+                }
+                h.finish(20)
+            },
+        );
+    }
+    {
+        let a = test::black_box([
+            0x9416084294160842,
+            0x674333f7674333f7,
+            0x005e977a005e977a,
+            0x005e977e005e977e,
+            0x9416084394160843,
+            0x674333f8674333f8,
+            0x005e977b005e977b,
+            0x005e977f005e977f,
+            0x8416084284160842,
+            0xa74333f7a74333f7,
+            0x305e977a305e977a,
+            0x305e977e305e977e,
+            0x8416084384160843,
+            0xa74333f8a74333f8,
+            0x305e977b305e977b,
+            0x305e977f305e977f,
+            0x9416184294161842,
+            0x674343f7674343f7,
+            0x005ea77a005ea77a,
+            0x006e977e006e977e,
+            0x9416184394161843,
+            0x674343f8674343f8,
+            0x005ea77b005ea77b,
+            0x006e977f006e977f,
+            0x8416184284161842,
+            0xa74343f7a74343f7,
+            0x305ea77a305ea77a,
+            0x306e977e306e977e,
+            0x8416184384161843,
+            0xa74343f8a74343f8,
+            0x305ea77b305ea77b,
+            0x306e977f306e977f,
+            0xf4160842f4160842,
+            0xc74333f7c74333f7,
+            0x505e977a505e977a,
+            0x105e977e105e977e,
+            0xf4160843f4160843,
             0xc74333f8c74333f8,
             0x505e977b505e977b,
             0x105e977f105e977f,
@@ -389,7 +608,7 @@ fn main() {
                 for &x in &buf[..] {
                     h.write_u64(u64::from(x));
                 }
-                h.finish()
+                h.finish(20)
             },
         );
     }
@@ -406,7 +625,7 @@ fn main() {
             for &x in buf {
                 h.write_u64(u64::from(x));
             }
-            h.finish()
+            h.finish(20)
         })
     }
     {
@@ -562,7 +781,7 @@ fn main() {
                 for &x in buf {
                     h.write_u64(u64::from(x));
                 }
-                h.finish()
+                h.finish(20)
             },
         )
     }
@@ -577,7 +796,9 @@ fn main() {
             #[allow(deprecated)]
             let mut h = SipHasher::new_with_keys(a, b);
             h.write_u32(value);
-            h.finish() as u32
+            (h.finish() & ((1 << 20) - 1)) as u32
         });
     }
+
+    */
 }

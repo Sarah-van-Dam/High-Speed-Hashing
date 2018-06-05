@@ -11,7 +11,10 @@ use test;
 
 pub const M89: [u32; 3] = [0xffffffff, 0xffffffff, 0x01ffffff];
 
+#[inline]
 pub fn mmp_p89_u64(l: usize, a: [u32; 3], b: [u32; 3], x: u64) -> u64 {
+    debug_assert!(l <= 64);
+
     let x = [x as u32, (x >> 32) as u32];
     let [c0, c1, c2, c3, c4] = mul3x2(a, x);
     let d = add6x3modp([c0, c1, c2, c3, c4, 0], b);
@@ -26,7 +29,9 @@ pub fn mmp_p89_u64(l: usize, a: [u32; 3], b: [u32; 3], x: u64) -> u64 {
 
 pub const M31: u32 = 0x7fffffff;
 
+#[inline]
 pub fn mmp_p31_u30(l: usize, a: u32, b: u32, x: u32) -> u32 {
+    debug_assert!(l <= 30);
     debug_assert!(a < M31);
     debug_assert!(b < M31);
     debug_assert!(x < M31);
@@ -43,6 +48,7 @@ pub fn mmp_p31_u30(l: usize, a: u32, b: u32, x: u32) -> u32 {
 // Interface: u = 2^64, m = 2^l, l < 31
 // Parameters: a0, a1, a2, b0, b1, b2 < p
 
+#[inline]
 pub fn mmp_p31_u64(l: usize, a: [u32; 3], b: [u32; 3], x: u64) -> u32 {
     let x0 = (x & 0x3fffffff) as u32;
     let x1 = ((x >> 30) & 0x3fffffff) as u32;
@@ -61,7 +67,13 @@ pub fn mmp_p31_u64(l: usize, a: [u32; 3], b: [u32; 3], x: u64) -> u32 {
 
 pub const M61: u64 = 0x1fffffffffffffff;
 
+#[inline]
 pub fn mmp_p61_u60_128(l: usize, a: u64, b: u64, x: u64) -> u64 {
+    debug_assert!(l <= 60);
+    debug_assert!(a < M61);
+    debug_assert!(b < M61);
+    debug_assert!(x < M61);
+
     let r = u128::from(a)
         .wrapping_mul(u128::from(x))
         .wrapping_add(u128::from(b));
@@ -75,29 +87,77 @@ pub fn mmp_p61_u60_128(l: usize, a: u64, b: u64, x: u64) -> u64 {
 // Multiply-Shift
 ////////////////////////////////////////
 
+#[inline]
 pub fn shift_u32(l: usize, a: u32, x: u32) -> u32 {
+    debug_assert!(l <= 32);
     a.wrapping_mul(x) >> (32 - l)
 }
 
+#[inline]
 pub fn shift_u64(l: usize, a: u64, x: u64) -> u64 {
+    debug_assert!(l <= 64);
     a.wrapping_mul(x) >> (64 - l)
 }
 
+#[inline]
 pub fn shift_u128_128(l: usize, a: u128, x: u128) -> u128 {
+    debug_assert!(l <= 128);
     a.wrapping_mul(x) >> (128 - l)
 }
 
+#[inline]
 pub fn shift_strong_u32(l: usize, a: u64, b: u64, x: u32) -> u32 {
+    debug_assert!(l <= 32);
     (a.wrapping_mul(u64::from(x)).wrapping_add(b) >> (64 - l)) as u32
 }
 
+#[inline]
 pub fn shift_strong_u64_128(l: usize, a: u128, b: u128, x: u64) -> u64 {
+    debug_assert!(l <= 64);
     (a.wrapping_mul(u128::from(x)).wrapping_add(b) >> (128 - l)) as u64
 }
 
 ////////////////////////////////////////
 // Vectorized Multiply-Shift
 ////////////////////////////////////////
+
+// Constants:
+// Interface: u = 2^32, d = 64, m = 2^l, l <
+
+pub struct VectorShiftU32D64 {
+    a: [u64; 64],
+    i: usize,
+    state: u64,
+}
+
+impl VectorShiftU32D64 {
+    #[inline]
+    pub fn new(a: [u64; 64]) -> Self {
+        Self { a, i: 0, state: 0 }
+    }
+
+    #[inline]
+    pub fn write_u32(&mut self, x: u32) {
+        let prod = self.a[self.i].wrapping_mul(u64::from(x));
+        self.state = self.state.wrapping_add(prod);
+        self.i += 1;
+    }
+
+    #[inline]
+    pub fn is_done(&self) -> bool {
+        self.i == 64
+    }
+
+    #[inline]
+    pub fn finish(&mut self, l: usize) -> u32 {
+        debug_assert!(l <= 32);
+        debug_assert!(self.is_done());
+        let value = (self.state >> (64 - l)) as u32;
+        self.i = 0;
+        self.state = 0;
+        value
+    }
+}
 
 pub struct PairPrefixShiftU64D32 {
     a: [u64; 65],
@@ -128,9 +188,10 @@ impl PairPrefixShiftU64D32 {
     }
 
     #[inline]
-    pub fn finish(&mut self) -> u32 {
+    pub fn finish(&mut self, l: usize) -> u32 {
+        debug_assert!(l <= 32);
         let ad = self.a[2 * self.i];
-        let value = (self.state.wrapping_add(ad) >> 32) as u32;
+        let value = (self.state.wrapping_add(ad) >> (64 - l)) as u32;
         self.i = 0;
         self.state = 0;
         value
@@ -164,11 +225,13 @@ impl PolyU64 {
     }
 
     #[inline]
-    pub fn finish(&mut self) -> u64 {
+    pub fn finish(&mut self, l: usize) -> u64 {
+        debug_assert!(l <= 64);
         let s = mul3x3(self.a, self.state);
         let t = add6x3modp(s, self.b);
+        let value = (t[0] as u64) | ((t[1] as u64) << 32);
         self.state = [0, 0, 0];
-        ((t[0] as u64) | (t[1] as u64) << 32)
+        value & ((1 << l) - 1)
     }
 }
 
@@ -194,15 +257,15 @@ impl PreprocPolyU64D32 {
     }
 
     #[inline]
-    pub fn finish(&mut self) -> u64 {
+    pub fn finish(&mut self, l: usize) -> u64 {
         self.flush();
-        self.poly.finish()
+        self.poly.finish(l)
     }
 
     #[inline]
     fn flush(&mut self) {
-        let q0 = self.prep0.finish();
-        let q1 = self.prep1.finish();
+        let q0 = self.prep0.finish(32);
+        let q1 = self.prep1.finish(32);
         let q = (q0 as u64) | (q1 as u64) << 32;
         self.poly.write_u64(q);
     }
