@@ -125,14 +125,14 @@ pub fn shift_strong_u64_128(l: usize, a: u128, b: u128, x: u64) -> u64 {
 // Interface: u = 2^32, d = 64, m = 2^l, l <
 
 pub struct VectorShiftU32D64 {
-    a: [u64; 64],
+    a: [u64; 65],
     i: usize,
     state: u64,
 }
 
 impl VectorShiftU32D64 {
     #[inline]
-    pub fn new(a: [u64; 64]) -> Self {
+    pub fn new(a: [u64; 65]) -> Self {
         Self { a, i: 0, state: 0 }
     }
 
@@ -151,21 +151,20 @@ impl VectorShiftU32D64 {
     #[inline]
     pub fn finish(&mut self, l: usize) -> u32 {
         debug_assert!(l <= 32);
-        debug_assert!(self.is_done());
-        let value = (self.state >> (64 - l)) as u32;
+        let value = (self.state.wrapping_add(self.a[self.i]) >> (64 - l)) as u32;
         self.i = 0;
         self.state = 0;
         value
     }
 }
 
-pub struct PairPrefixShiftU64D32 {
+pub struct PairShiftU64D32 {
     a: [u64; 65],
     i: usize,
     state: u64,
 }
 
-impl PairPrefixShiftU64D32 {
+impl PairShiftU64D32 {
     #[inline]
     pub fn new(a: [u64; 65]) -> Self {
         Self { a, i: 0, state: 0 }
@@ -237,13 +236,13 @@ impl PolyU64 {
 
 pub struct PreprocPolyU64D32 {
     poly: PolyU64,
-    prep0: PairPrefixShiftU64D32,
-    prep1: PairPrefixShiftU64D32,
+    prep0: PairShiftU64D32,
+    prep1: PairShiftU64D32,
 }
 
 impl PreprocPolyU64D32 {
     #[inline]
-    pub fn new(poly: PolyU64, prep0: PairPrefixShiftU64D32, prep1: PairPrefixShiftU64D32) -> Self {
+    pub fn new(poly: PolyU64, prep0: PairShiftU64D32, prep1: PairShiftU64D32) -> Self {
         Self { poly, prep0, prep1 }
     }
 
@@ -475,8 +474,8 @@ fn test_poly_speedup_64() {
         [0xfffffffe, 0xffffffff, 0x01ffffff],
         [0xfffffffe, 0xffffffff, 0x01ffffff],
     );
-    let prep0 = PairPrefixShift32x64::new([0xffffffffffffffff; 65]);
-    let prep1 = PairPrefixShift32x64::new([0xffffffffffffffff; 65]);
+    let prep0 = PairShift32x64::new([0xffffffffffffffff; 65]);
+    let prep1 = PairShift32x64::new([0xffffffffffffffff; 65]);
     let mut h = PolySpeedup64::new(poly, prep0, prep1);
     for &x in &[0xffffffffffffffff; 1024][..] {
         h.write_u64(x);

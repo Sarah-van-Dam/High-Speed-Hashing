@@ -12,7 +12,7 @@ use std::time::Instant;
 #[allow(deprecated)]
 use std::hash::{Hasher, SipHasher};
 
-use byteorder::ByteOrder;
+use byteorder::{ByteOrder, BigEndian};
 
 pub mod imp;
 
@@ -191,12 +191,11 @@ where
     }
 }
 
-
 fn experiment_1(mode: OutputMode, input_raw: &[u8]) {
     let input_raw = &input_raw[..input_raw.len() & !3];
 
     let mut input_raw_u32 = vec![0; input_raw.len() / 4];
-    byteorder::BigEndian::read_u32_into(input_raw, &mut input_raw_u32[..]);
+    BigEndian::read_u32_into(input_raw, &mut input_raw_u32[..]);
 
     let input_32 = input_raw_u32.iter().map(|&value| value & 0x3fffffff).collect::<Vec<_>>();
     let input_64 = input_32.iter().map(|&value| u64::from(value)).collect::<Vec<_>>();
@@ -294,6 +293,392 @@ fn experiment_1(mode: OutputMode, input_raw: &[u8]) {
     }
 }
 
+fn time_2<T, F>(mode: OutputMode, rep: u32, num: u32, scheme: &str, input: &[T], func: F)
+where
+    F: Fn(&[T], &mut u32),
+{
+    let input = test::black_box(input);
+
+    for _ in 0..rep {
+        let mut tmp = 0;
+
+        let start = Instant::now();
+        for _ in 0..num {
+            func(input, &mut tmp);
+        }
+        let elapsed = start.elapsed();
+
+        let _ = test::black_box(tmp);
+
+        let secs = (elapsed.as_secs() as f64) + (elapsed.subsec_nanos() as f64 / 1e9);
+        let nspervalue = secs / (num as f64) / (input.len() as f64) * 1e9;
+
+        match mode {
+            OutputMode::Pretty => {
+                println!("Scheme: {}; ns/value: {:.6}", scheme, nspervalue);
+            }
+            OutputMode::Csv => {
+                println!("{},{}", scheme, nspervalue);
+            }
+        }
+    }
+}
+
+fn experiment_2(mode: OutputMode, input_raw: &[u8]) {
+    let input_raw = &input_raw[..input_raw.len() & !255];
+
+    let mut input_32 = Vec::new();
+    let mut input_64 = Vec::new();
+
+    for chunk in input_raw.chunks(256) {
+        let mut chunk_32 = [0; 64];
+        let mut chunk_64 = [0; 32];
+
+        BigEndian::read_u32_into(chunk, &mut chunk_32);
+        BigEndian::read_u64_into(chunk, &mut chunk_64);
+
+        input_32.push(chunk_32);
+        input_64.push(chunk_64);
+    }
+
+    let rep = 10;
+    let num = 2000;
+
+    if mode.is_csv() {
+        println!("scheme,nspervalue");
+    }
+
+    {
+        let a = test::black_box([
+            0xa32b511bb9419925,
+            0x468967dfa5b55d7c,
+            0xd42a4cfdeaccd43c,
+            0x3c2c20e3f28f94ad,
+            0xce58ab0fc65d6b53,
+            0xa24f83440516d39e,
+            0xfeda02478b1da9bb,
+            0x0a1c38a336c2f53f,
+            0xee08871d414ea1e4,
+            0x751f29778f19e95e,
+            0x40714e646dcda33a,
+            0xb304dbe1cd04d2ac,
+            0x4c58ef616d8f044f,
+            0xd006a9b5e0dc2623,
+            0x1e9d6de78875186e,
+            0x4c7c6c3f07eb6795,
+            0x1503435a2323b6de,
+            0x697bc32cadc36151,
+            0xef2942f4cc29ce0d,
+            0x09aadd479d1e4147,
+            0x77a506902fc4e94c,
+            0x35601d50f726e15c,
+            0x359fbdab75f704ec,
+            0x08b069380425ddcb,
+            0x77071ac116b7bfe2,
+            0x0f1fe1f375365ab0,
+            0x1df5d02088d82064,
+            0x373a6593a7b533dd,
+            0xddca0594cabad3fa,
+            0xafa30a4218f2473b,
+            0xbac3eb0c71667dfd,
+            0x73d944d2aeaa1269,
+            0x9b3993f6d476ee21,
+            0x1d0082cc5add5c6b,
+            0xe1c721ec67b9f8d1,
+            0x4dd3ae5399c02295,
+            0x8c22156793c91933,
+            0x539298bdc22fa4d3,
+            0x518e460a4cebf181,
+            0x28d7214e330ab8f4,
+            0x09bc35ac293702d0,
+            0x9f2e084081b677bc,
+            0x31b981b366dd76e8,
+            0xf8411798adebd9f9,
+            0x4d7935d75ffa99be,
+            0x4a5058b71a2170c3,
+            0x16e68a8922ce1dfa,
+            0x1b26ad0a35d2745d,
+            0x12a7113f0927dca3,
+            0x3ebc8b7f8b09920b,
+            0xde2de731b4800c4e,
+            0x0897fa405ec8cca4,
+            0xf839242a1cda43c5,
+            0xfb8b84894d9d4947,
+            0x392d27343c4f233d,
+            0x9d606bb797002b7f,
+            0x8ee61bbd1967b081,
+            0xfc60e7cd5f76f82c,
+            0x91cbb2891a10527a,
+            0xcfd9ead6bbe3b6c8,
+            0xc091e4ed4cf36d45,
+            0xf44ac339e3d30263,
+            0x7dfecb5fda4973ad,
+            0xc176a7a265736f18,
+            0xa8ce3b04fbd2e1d3,
+        ]);
+        time_2(mode, rep, num, "vector-shift", &input_32[..], |input, tmp| {
+            for chunk in input {
+                let mut h = imp::VectorShiftU32D64::new(a);
+                for &value in &chunk[..] {
+                    h.write_u32(value);
+                }
+                *tmp ^= h.finish(20);
+            }
+        });
+    }
+    {
+        let a = test::black_box([
+            0x63b92c3f6df33488,
+            0xa2207bc53adff964,
+            0xaec2dca88ddb1e71,
+            0x79e19e87fa120cd8,
+            0x85bd7747f7d1493f,
+            0xfdde9f44942c2df6,
+            0x7ef56cb9766c7bc6,
+            0xdec9e842facb5ba5,
+            0x46f60b65eb67e0cc,
+            0x6997be6404ca980b,
+            0x8c0dbf8d1edc9e70,
+            0xe49f1e9651cd3d49,
+            0x58f51b8593abac4a,
+            0x1c2aa379835987a3,
+            0x92436454c98acd6f,
+            0xf15831f1005edb4b,
+            0xce7e34a170f36676,
+            0x8e0684e862399c99,
+            0x44aa63cc74e9d839,
+            0x1ca6f7fdc88bd05b,
+            0x1e1b5d120571c33f,
+            0xa6e3aad03a3ff85f,
+            0x8ae600281f7019d9,
+            0x8559f1287c8bdaf7,
+            0xdf63429a69a3b57b,
+            0x4a4b9478b5a14152,
+            0xaa94a0588831596f,
+            0x21e11fe26c62825b,
+            0x7a5392426a883bdb,
+            0x2f3dcaa473d8222b,
+            0xebe8bfe52c1bbca7,
+            0xa5783fcb6379c163,
+            0x4aa81d8a54b34ff4,
+            0xefedb73f6cba9878,
+            0x56182b429bc1d9f3,
+            0xfa1ea680e285753f,
+            0x21883ba4784126a2,
+            0x52a07eee2741d3c9,
+            0x322a1706fbcd82e7,
+            0xec396c42fe6c180d,
+            0x5c4819bf3abf0554,
+            0x02331e406dc18024,
+            0xd8c4e83242264407,
+            0x51652714bd893042,
+            0x7d5839310d07efe3,
+            0xaf6f52fe3072a8f8,
+            0x1c4fc232dd6ff784,
+            0x9c9d5a588e373486,
+            0x6962398ddf75a9e4,
+            0x6dfe23682b96a306,
+            0x02a9ffbcf9a2549f,
+            0x171495363537cbb4,
+            0x0e33ee376f9c6c7a,
+            0x7e866b96944047b9,
+            0x59ec7828c2c71193,
+            0x93c8b1adc117d060,
+            0x92b721f7bbf2b356,
+            0xe14f685a4a6e66b7,
+            0xda4eeef5ca762528,
+            0xee00e49829361caa,
+            0xba45113f9d873b85,
+            0x0dfad687c9ebd0b8,
+            0x97d359cd16140081,
+            0x1d53acb7d0ce02aa,
+            0xc6f31d83502a08d0,
+        ]);
+        time_2(mode, rep, num, "pair-shift", &input_64[..], |input, tmp| {
+            for chunk in input {
+                let mut h = imp::PairShiftU64D32::new(a);
+                for &value in &chunk[..] {
+                    h.write_u64(value);
+                }
+                *tmp ^= h.finish(20) as u32;
+            }
+        });
+    }
+}
+
+fn experiment_3(mode: OutputMode, input_raw: &[u8]) {
+    let input_8 = &input_raw[..input_raw.len() & !7];
+
+    let mut input_64 = vec![0; input_8.len() / 8];
+
+    BigEndian::read_u64_into(&input_8, &mut input_64[..]);
+
+    let rep = 10;
+    let num = 400;
+
+    {
+        let a = test::black_box([1, 0, 0]);
+        let b = test::black_box([2, 0, 0]);
+        let c = test::black_box([3, 0, 0]);
+        time_2(mode, rep, num, "poly-64", &input_64[..], |input, tmp| {
+            let mut h = imp::PolyU64::new(a, b, c);
+            for &value in input {
+                h.write_u64(value);
+            }
+            *tmp ^= h.finish(20) as u32;
+        });
+    }
+    {
+        let prep1 = test::black_box([
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+        ]);
+        let prep2 = test::black_box([
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+        ]);
+        let a = test::black_box([1, 0, 0]);
+        let b = test::black_box([2, 0, 0]);
+        let c = test::black_box([3, 0, 0]);
+        time_2(mode, rep, num, "poly-64", &input_64[..], |input, tmp| {
+            let h0 = imp::PolyU64::new(a, b, c);
+            let h1 = imp::PairShiftU64D32::new(prep1);
+            let h2 = imp::PairShiftU64D32::new(prep2);
+            let mut h = imp::PreprocPolyU64D32::new(h0, h1, h2);
+            for &value in input {
+                h.write_u64(value);
+            }
+            *tmp ^= h.finish(20) as u32;
+        });
+    }
+}
+
 fn main() {
     let mut input_raw = Vec::new();
     {
@@ -332,10 +717,12 @@ fn main() {
         }
     };
 
-    let num = 1;
+    let num = 3;
 
     match num {
         1 => experiment_1(mode, &input_raw),
+        2 => experiment_2(mode, &input_raw),
+        3 => experiment_3(mode, &input_raw),
         _ => panic!(),
     }
 
@@ -604,7 +991,7 @@ fn main() {
             |value| {
                 let mut buf = [0; 29];
                 buf[3] = value;
-                let mut h = imp::PairPrefixShiftU64D32::new(a);
+                let mut h = imp::PairShiftU64D32::new(a);
                 for &x in &buf[..] {
                     h.write_u64(u64::from(x));
                 }
@@ -775,8 +1162,8 @@ fn main() {
             20_000_000,
             |buf| {
                 let poly = imp::PolyU64::new(a, b, c);
-                let prep0 = imp::PairPrefixShiftU64D32::new(a0);
-                let prep1 = imp::PairPrefixShiftU64D32::new(a1);
+                let prep0 = imp::PairShiftU64D32::new(a0);
+                let prep1 = imp::PairShiftU64D32::new(a1);
                 let mut h = imp::PreprocPolyU64D32::new(poly, prep0, prep1);
                 for &x in buf {
                     h.write_u64(u64::from(x));
