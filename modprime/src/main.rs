@@ -12,7 +12,7 @@ use std::time::Instant;
 #[allow(deprecated)]
 use std::hash::{Hasher, SipHasher};
 
-use byteorder::{ByteOrder, BigEndian};
+use byteorder::{BigEndian, ByteOrder};
 
 pub mod imp;
 
@@ -38,137 +38,250 @@ impl OutputMode {
     }
 }
 
-fn time_1<T, F>(mode: OutputMode, rep: u32, num: u32, scheme: &str, bits: u32, is_128: bool, input: &[T], func: F)
+pub fn time_nanos_one<F>(mut func: F) -> f64
 where
-    F: Fn(&[T], &mut u32),
+    F: FnMut(),
 {
-    let input = test::black_box(input);
+    let start = Instant::now();
+    func();
+    let elapsed = start.elapsed();
 
-    for _ in 0..rep {
-        let mut tmp = 0;
+    let secs = elapsed.as_secs() as f64;
+    let nanos = elapsed.subsec_nanos() as f64;
 
-        let start = Instant::now();
-        for _ in 0..num {
-            func(input, &mut tmp);
-        }
-        let elapsed = start.elapsed();
-
-        let _ = test::black_box(tmp);
-
-        let secs = (elapsed.as_secs() as f64) + (elapsed.subsec_nanos() as f64 / 1e9);
-        let nspervalue = secs / (num as f64) / (input.len() as f64) * 1e9;
-
-        match mode {
-            OutputMode::Pretty => {
-                println!("Scheme: {}, input bit-length: {}, 128-bit: {}; ns/value: {:.6}", scheme, bits, is_128, nspervalue);
-            }
-            OutputMode::Csv => {
-                let is_128 = if is_128 { "TRUE" } else { "FALSE" };
-                println!("{},{},{},{}", scheme, bits, is_128, nspervalue);
-            }
-        }
-    }
+    secs * 1e9 + nanos
 }
 
-fn experiment_1(mode: OutputMode, input_raw: &[u8]) {
+pub fn time_nanos<F>(reps: u32, mut func: F) -> f64
+where
+    F: FnMut(),
+{
+    let nanos = time_nanos_one(|| {
+        for _ in 0..reps {
+            func();
+        }
+    });
+
+    nanos / (reps as f64)
+}
+
+pub fn time_nanos_slice<T, F>(reps: u32, input: &[T], mut func: F) -> f64
+where
+    F: FnMut(&T),
+{
+    let nanos = time_nanos(reps, || {
+        for value in input {
+            func(value);
+        }
+    });
+
+    nanos / (input.len() as f64)
+}
+
+pub fn time_nanos_with_state<S, F>(reps: u32, start_state: S, mut func: F) -> f64
+where
+    F: FnMut(&mut S),
+{
+    let mut state = start_state;
+    let nanos = time_nanos(reps, || func(&mut state));
+    let _ = test::black_box(state);
+
+    nanos
+}
+
+pub fn time_nanos_slice_with_state<T, S, F>(
+    reps: u32,
+    input: &[T],
+    start_state: S,
+    mut func: F,
+) -> f64
+where
+    F: FnMut(&T, &mut S),
+{
+    let mut state = start_state;
+    let nanos = time_nanos_slice(reps, input, |value| func(value, &mut state));
+    let _ = test::black_box(state);
+
+    nanos
+}
+
+pub fn experiment_1(mode: OutputMode, input_raw: &[u8]) {
     let input_raw = &input_raw[..input_raw.len() & !3];
 
     let mut input_raw_u32 = vec![0; input_raw.len() / 4];
     BigEndian::read_u32_into(input_raw, &mut input_raw_u32[..]);
 
-    let input_32 = input_raw_u32.iter().map(|&value| value & 0x3fffffff).collect::<Vec<_>>();
-    let input_64 = input_32.iter().map(|&value| u64::from(value)).collect::<Vec<_>>();
-    let input_128 = input_32.iter().map(|&value| u128::from(value)).collect::<Vec<_>>();
+    let input_32 = input_raw_u32
+        .iter()
+        .map(|&value| value & 0x3fffffff)
+        .collect::<Vec<_>>();
+    let input_64 = input_32
+        .iter()
+        .map(|&value| u64::from(value))
+        .collect::<Vec<_>>();
+    let input_128 = input_32
+        .iter()
+        .map(|&value| u128::from(value))
+        .collect::<Vec<_>>();
 
-    let rep = 10;
-    let num = 1000;
+    let input_32 = test::black_box(&input_32[..]);
+    let input_64 = test::black_box(&input_64[..]);
+    let input_128 = test::black_box(&input_128[..]);
+
+    let samples = 10;
+    let reps = 1000;
+
+    let config = (mode, samples);
 
     if mode.is_csv() {
         println!("scheme,bits,is128,nspervalue");
     }
 
-    // Shift
+    struct Spec<'a, T: 'a> {
+        config: (OutputMode, u32),
+        family: (&'a str, u32, bool),
+        input: (u32, &'a [T]),
+    }
+
+    impl<'a, T: 'a> Spec<'a, T> {
+        fn sample<F>(&self, mut func: F)
+        where
+            F: FnMut(&T) -> u32,
+        {
+            let (mode, samples) = self.config;
+            let (scheme, bits, is_128) = self.family;
+            let (reps, input) = self.input;
+
+            for _ in 0..samples {
+                let nanos = time_nanos_slice_with_state(reps, input, 0, |value, state| {
+                    *state ^= func(value);
+                });
+
+                match mode {
+                    OutputMode::Pretty => {
+                        println!(
+                            "Scheme: {}, input bit-length: {}, 128-bit: {}; ns/value: {:.6}",
+                            scheme, bits, is_128, nanos
+                        );
+                    }
+                    OutputMode::Csv => {
+                        let is_128 = if is_128 { "TRUE" } else { "FALSE" };
+                        println!("{},{},{},{}", scheme, bits, is_128, nanos);
+                    }
+                }
+            }
+        }
+    }
+
+    // Multiply-Shift
 
     {
+        let spec = Spec {
+            config,
+            family: ("shift", 32, false),
+            input: (reps, input_32),
+        };
+
         let a = test::black_box(0x3bca40c7);
-        time_1(mode, rep, num, "shift", 32, false, &input_32[..], |input, tmp| {
-            for &value in input {
-                *tmp ^= imp::shift_u32(20, a, value);
-            }
-        });
+
+        spec.sample(|&x| imp::shift_u32(20, a, x));
     }
     {
+        let spec = Spec {
+            config,
+            family: ("shift", 64, false),
+            input: (reps, input_64),
+        };
+
         let a = test::black_box(0xa570f20b9bd5adfb);
-        time_1(mode, rep, num, "shift", 64, false, &input_64[..], |input, tmp| {
-            for &value in input {
-                *tmp ^= imp::shift_u64(20, a, value) as u32;
-            }
-        });
+
+        spec.sample(|&x| imp::shift_u64(20, a, x) as u32);
     }
     {
+        let spec = Spec {
+            config,
+            family: ("shift", 128, true),
+            input: (reps, input_128),
+        };
+
         let a = test::black_box(0x2cb56e50f9538749b4a1648382ba0d59);
-        time_1(mode, rep, num, "shift", 128, true, &input_128[..], |input, tmp| {
-            for &value in input {
-                *tmp ^= imp::shift_u128_128(20, a, value) as u32;
-            }
-        });
+
+        spec.sample(|&x| imp::shift_u128_128(20, a, x) as u32);
     }
     {
+        let spec = Spec {
+            config,
+            family: ("shift-strong", 32, false),
+            input: (reps, input_32),
+        };
+
         let a = test::black_box(0x9cb37f1a);
         let b = test::black_box(0x2d8b1736);
-        time_1(mode, rep, num, "shift-strong", 32, false, &input_32[..], |input, tmp| {
-            for &value in input {
-                *tmp ^= imp::shift_strong_u32(20, a, b, value) as u32;
-            }
-        });
+
+        spec.sample(|&x| imp::shift_strong_u32(20, a, b, x) as u32);
     }
     {
+        let spec = Spec {
+            config,
+            family: ("shift-strong", 64, true),
+            input: (reps, input_64),
+        };
+
         let a = test::black_box(0x6865db19e3d1b464);
         let b = test::black_box(0x583bc159d427a991);
-        time_1(mode, rep, num, "shift-strong", 64, true, &input_64[..], |input, tmp| {
-            for &value in input {
-                *tmp ^= imp::shift_strong_u64_128(20, a, b, value) as u32;
-            }
-        });
+
+        spec.sample(|&x| imp::shift_strong_u64_128(20, a, b, x) as u32);
     }
 
     // Multiply-Mod-Prime
 
     {
+        let spec = Spec {
+            config,
+            family: ("mmp", 30, false),
+            input: (reps, input_32),
+        };
+
         let a = test::black_box(0x40ed8147);
         let b = test::black_box(0x64b07a26);
-        time_1(mode, rep, num, "mmp", 30, false, &input_32[..], |input, tmp| {
-            for &value in input {
-                *tmp ^= imp::mmp_p31_u30(20, a, b, value);
-            }
-        });
+
+        spec.sample(|&x| imp::mmp_p31_u30(20, a, b, x));
     }
     {
+        let spec = Spec {
+            config,
+            family: ("mmp-triple", 64, false),
+            input: (reps, input_64),
+        };
+
         let a = test::black_box([0x68dc5b2d, 0x29ad0bce, 0x278a331a]);
         let b = test::black_box([0x3e4f5b23, 0x2e47ea16, 0x3c665bad]);
-        time_1(mode, rep, num, "mmp-triple", 64, false, &input_64[..], |input, tmp| {
-            for &value in input {
-                *tmp ^= imp::mmp_p31_u64(20, a, b, value);
-            }
-        });
+
+        spec.sample(|&x| imp::mmp_p31_u64(20, a, b, x));
     }
     {
+        let spec = Spec {
+            config,
+            family: ("mmp", 60, true),
+            input: (reps, input_64),
+        };
+
         let a = test::black_box(0x02f52fcd0b6474c3);
         let b = test::black_box(0x0cb11e6766f6e421);
-        time_1(mode, rep, num, "mmp", 60, true, &input_32[..], |input, tmp| {
-            for &value in input {
-                *tmp ^= imp::mmp_p61_u60_128(20, a, b, u64::from(value)) as u32;
-            }
-        });
+
+        spec.sample(|&x| imp::mmp_p61_u60_128(20, a, b, x) as u32);
     }
     {
+        let spec = Spec {
+            config,
+            family: ("mmp", 64, false),
+            input: (reps, input_64),
+        };
+
         let a = test::black_box([0xc543be39, 0xf663c8a4, 0x017193ad]);
         let b = test::black_box([0x180375ec, 0xd6fbb57d, 0x0010c0af]);
-        time_1(mode, rep, num, "mmp", 64, false, &input_64[..], |input, tmp| {
-            for &value in input {
-                *tmp ^= imp::mmp_p89_u64(20, a, b, value) as u32;
-            }
-        });
+
+        spec.sample(|&x| imp::mmp_p89_u64(20, a, b, x) as u32);
     }
 }
 
@@ -295,15 +408,22 @@ fn experiment_2(mode: OutputMode, input_raw: &[u8]) {
             0xc176a7a265736f18,
             0xa8ce3b04fbd2e1d3,
         ]);
-        time_2(mode, rep, num, "vector-shift", &input_32[..], |input, tmp| {
-            for chunk in input {
-                let mut h = imp::VectorShiftU32D64::new(a);
-                for &value in &chunk[..] {
-                    h.write_u32(value);
+        time_2(
+            mode,
+            rep,
+            num,
+            "vector-shift",
+            &input_32[..],
+            |input, tmp| {
+                for chunk in input {
+                    let mut h = imp::VectorShiftU32D64::new(a);
+                    for &value in &chunk[..] {
+                        h.write_u32(value);
+                    }
+                    *tmp ^= h.finish(20);
                 }
-                *tmp ^= h.finish(20);
-            }
-        });
+            },
+        );
     }
     {
         let a = test::black_box([
@@ -561,7 +681,8 @@ fn experiment_3(mode: OutputMode, input_raw: &[u8]) {
         });
     }
 
-    #[allow(deprecated)] {
+    #[allow(deprecated)]
+    {
         time_2(mode, rep, num, "sip", &input_64[..], |input, tmp| {
             let mut h = SipHasher::new_with_keys(0x3b67cbb8b09e78f0, 0xd7f3a93cead49a81);
             for &value in input {
@@ -610,7 +731,7 @@ fn main() {
         }
     };
 
-    let num = 3;
+    let num = 1;
 
     match num {
         1 => experiment_1(mode, &input_raw),
