@@ -244,7 +244,7 @@ pub fn experiment_1(mode: OutputMode, input_raw: &[u8]) {
     let config = (mode, samples);
 
     if mode.is_csv() {
-        println!("scheme,bits,is128,nspervalue");
+        println!("scheme,bits,is128,nanos");
     }
 
     // Multiply-Shift
@@ -421,7 +421,7 @@ pub fn experiment_2(mode: OutputMode, input_raw: &[u8]) {
     let config = (mode, samples);
 
     if mode.is_csv() {
-        println!("scheme,nspervalue");
+        println!("family,nanos");
     }
 
     // Vector-Shift
@@ -650,7 +650,7 @@ pub fn experiment_3(mode: OutputMode, input_raw: &[u8]) {
     let config = (mode, samples);
 
     if mode.is_csv() {
-        println!("scheme,nspervalue");
+        println!("family,nanos");
     }
 
     {
