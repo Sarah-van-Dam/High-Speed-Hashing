@@ -148,33 +148,6 @@ where
     nanos / (input.len() as f64)
 }
 
-pub fn time_nanos_with_state<S, F>(reps: u32, start_state: S, mut func: F) -> f64
-where
-    F: FnMut(&mut S),
-{
-    let mut state = start_state;
-    let nanos = time_nanos(reps, || func(&mut state));
-    let _ = test::black_box(state);
-
-    nanos
-}
-
-pub fn time_nanos_slice_with_state<T, S, F>(
-    reps: u32,
-    input: &[T],
-    start_state: S,
-    mut func: F,
-) -> f64
-where
-    F: FnMut(&T, &mut S),
-{
-    let mut state = start_state;
-    let nanos = time_nanos_slice(reps, input, |value| func(value, &mut state));
-    let _ = test::black_box(state);
-
-    nanos
-}
-
 ////////////////////////////////////////
 // Experiment 1
 ////////////////////////////////////////
@@ -195,9 +168,9 @@ impl<'a, T: 'a> Spec1<'a, T> {
         let (reps, input) = self.input;
 
         for _ in 0..samples {
-            let nanos = time_nanos_slice_with_state(reps, input, 0, |value, state| {
-                *state ^= func(value);
-            });
+            let mut state = 0;
+            let nanos = time_nanos_slice(reps, input, |value| state ^= func(value));
+            let _ = test::black_box(state);
 
             match mode {
                 OutputMode::Pretty => {
@@ -379,9 +352,9 @@ impl<'a, T: 'a> Spec2<'a, T> {
         let (reps, input) = self.input;
 
         for _ in 0..samples {
-            let nanos = time_nanos_slice_with_state(reps, input, 0, |value, state| {
-                *state ^= func(value);
-            });
+            let mut state = 0;
+            let nanos = time_nanos_slice(reps, input, |value| state ^= func(value));
+            let _ = test::black_box(state);
 
             match mode {
                 OutputMode::Pretty => {
@@ -617,9 +590,9 @@ impl<'a, T: 'a> Spec3<'a, T> {
         let (reps, input) = self.input;
 
         for _ in 0..samples {
-            let nanos = time_nanos_with_state(reps, 0, |state| {
-                *state ^= func(input);
-            });
+            let mut state = 0;
+            let nanos = time_nanos(reps, || state ^= func(input));
+            let _ = test::black_box(state);
 
             let nanos = nanos / (input.len() as f64);
 
