@@ -818,10 +818,7 @@ pub fn experiment_3(mode: OutputMode, input_raw: &[u8]) {
         let c = test::black_box([0xb6aaea65, 0x7f9eefc7, 0x320577f3]);
 
         spec.sample(|input| {
-            let h0 = imp::PolyU64::new(a, b, c);
-            let h1 = imp::PairShiftU64D32::new(prep1);
-            let h2 = imp::PairShiftU64D32::new(prep2);
-            let mut h = imp::PreprocPolyU64D32::new(h0, h1, h2);
+            let mut h = imp::PreprocPolyU64D32::new(prep1, prep2, a, b, c);
             for &x in input {
                 h.write_u64(x);
             }

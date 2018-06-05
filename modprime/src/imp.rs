@@ -235,24 +235,28 @@ impl PolyU64 {
 }
 
 pub struct PreprocPolyU64D32 {
-    poly: PolyU64,
-    prep0: PairShiftU64D32,
     prep1: PairShiftU64D32,
+    prep2: PairShiftU64D32,
+    poly: PolyU64,
 }
 
 impl PreprocPolyU64D32 {
     #[inline]
-    pub fn new(poly: PolyU64, prep0: PairShiftU64D32, prep1: PairShiftU64D32) -> Self {
-        Self { poly, prep0, prep1 }
+    pub fn new(prep1: [u64; 65], prep2: [u64; 65], a: [u32; 3], b: [u32; 3], c: [u32; 3]) -> Self {
+        Self {
+            prep1: PairShiftU64D32::new(prep1),
+            prep2: PairShiftU64D32::new(prep2),
+            poly: PolyU64::new(a, b, c),
+        }
     }
 
     #[inline]
     pub fn write_u64(&mut self, x: u64) {
-        if self.prep0.is_done() {
+        if self.prep1.is_done() {
             self.flush();
         }
-        self.prep0.write_u64(x);
         self.prep1.write_u64(x);
+        self.prep2.write_u64(x);
     }
 
     #[inline]
@@ -263,9 +267,9 @@ impl PreprocPolyU64D32 {
 
     #[inline]
     fn flush(&mut self) {
-        let q0 = self.prep0.finish(32);
         let q1 = self.prep1.finish(32);
-        let q = (q0 as u64) | (q1 as u64) << 32;
+        let q2 = self.prep2.finish(32);
+        let q = (q1 as u64) | (q2 as u64) << 32;
         self.poly.write_u64(q);
     }
 }
