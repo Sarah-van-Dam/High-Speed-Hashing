@@ -16,6 +16,10 @@ use byteorder::{BigEndian, ByteOrder};
 
 pub mod imp;
 
+////////////////////////////////////////
+// Entry Point
+////////////////////////////////////////
+
 #[derive(Clone, Copy, Debug)]
 pub enum OutputMode {
     Csv,
@@ -37,6 +41,72 @@ impl OutputMode {
         }
     }
 }
+
+pub fn main() {
+    // Read input file.
+
+    let mut input_raw = Vec::new();
+    {
+        let mut file = File::open("input.txt").unwrap();
+        file.read_to_end(&mut input_raw).unwrap();
+    }
+
+    // Parse arguments.
+
+    let mut mode = None;
+    let mut experiment = 0;
+
+    let mut args = env::args();
+
+    let argv0 = args.next().unwrap();
+
+    for arg in args {
+        match &arg[..] {
+            "-c" => mode = Some(OutputMode::Csv),
+            "-p" => mode = Some(OutputMode::Pretty),
+            "1" => experiment = 1,
+            "2" => experiment = 2,
+            "3" => experiment = 3,
+            _ => {
+                eprintln!("Usage: cargo run --release -- [-cp] 1-3");
+                eprintln!("{}: unexpected argument {:?}", argv0, arg);
+                process::exit(2);
+            }
+        }
+    }
+
+    // Validate arguments.
+
+    if experiment == 0 {
+        mode = None;
+    }
+
+    let mode = match mode {
+        Some(mode) => mode,
+        None => {
+            eprintln!("Usage: cargo run --release -- [-cp] 1-3");
+            eprintln!("Options:");
+            eprintln!("  -c        Output as CSV.");
+            eprintln!("  -p        Output as human-readable text.");
+            eprintln!("Arguments:");
+            eprintln!("  1-3       Select the experiment to perform.");
+            process::exit(2);
+        }
+    };
+
+    // Perform experiment.
+
+    match experiment {
+        1 => experiment_1(mode, &input_raw),
+        2 => experiment_2(mode, &input_raw),
+        3 => experiment_3(mode, &input_raw),
+        _ => unreachable!(),
+    }
+}
+
+////////////////////////////////////////
+// Timing Helper Functions
+////////////////////////////////////////
 
 pub fn time_nanos_one<F>(mut func: F) -> f64
 where
@@ -105,6 +175,46 @@ where
     nanos
 }
 
+////////////////////////////////////////
+// Experiment 1
+////////////////////////////////////////
+
+pub struct Spec1<'a, T: 'a> {
+    config: (OutputMode, u32),
+    family: (&'a str, u32, bool),
+    input: (u32, &'a [T]),
+}
+
+impl<'a, T: 'a> Spec1<'a, T> {
+    pub fn sample<F>(&self, mut func: F)
+    where
+        F: FnMut(&T) -> u32,
+    {
+        let (mode, samples) = self.config;
+        let (scheme, bits, is_128) = self.family;
+        let (reps, input) = self.input;
+
+        for _ in 0..samples {
+            let nanos = time_nanos_slice_with_state(reps, input, 0, |value, state| {
+                *state ^= func(value);
+            });
+
+            match mode {
+                OutputMode::Pretty => {
+                    println!(
+                        "Scheme: {}, input bit-length: {}, 128-bit: {}; ns/value: {:.6}",
+                        scheme, bits, is_128, nanos
+                    );
+                }
+                OutputMode::Csv => {
+                    let is_128 = if is_128 { "TRUE" } else { "FALSE" };
+                    println!("{},{},{},{}", scheme, bits, is_128, nanos);
+                }
+            }
+        }
+    }
+}
+
 pub fn experiment_1(mode: OutputMode, input_raw: &[u8]) {
     let input_raw = &input_raw[..input_raw.len() & !3];
 
@@ -137,46 +247,10 @@ pub fn experiment_1(mode: OutputMode, input_raw: &[u8]) {
         println!("scheme,bits,is128,nspervalue");
     }
 
-    struct Spec<'a, T: 'a> {
-        config: (OutputMode, u32),
-        family: (&'a str, u32, bool),
-        input: (u32, &'a [T]),
-    }
-
-    impl<'a, T: 'a> Spec<'a, T> {
-        fn sample<F>(&self, mut func: F)
-        where
-            F: FnMut(&T) -> u32,
-        {
-            let (mode, samples) = self.config;
-            let (scheme, bits, is_128) = self.family;
-            let (reps, input) = self.input;
-
-            for _ in 0..samples {
-                let nanos = time_nanos_slice_with_state(reps, input, 0, |value, state| {
-                    *state ^= func(value);
-                });
-
-                match mode {
-                    OutputMode::Pretty => {
-                        println!(
-                            "Scheme: {}, input bit-length: {}, 128-bit: {}; ns/value: {:.6}",
-                            scheme, bits, is_128, nanos
-                        );
-                    }
-                    OutputMode::Csv => {
-                        let is_128 = if is_128 { "TRUE" } else { "FALSE" };
-                        println!("{},{},{},{}", scheme, bits, is_128, nanos);
-                    }
-                }
-            }
-        }
-    }
-
     // Multiply-Shift
 
     {
-        let spec = Spec {
+        let spec = Spec1 {
             config,
             family: ("shift", 32, false),
             input: (reps, input_32),
@@ -187,7 +261,7 @@ pub fn experiment_1(mode: OutputMode, input_raw: &[u8]) {
         spec.sample(|&x| imp::shift_u32(20, a, x));
     }
     {
-        let spec = Spec {
+        let spec = Spec1 {
             config,
             family: ("shift", 64, false),
             input: (reps, input_64),
@@ -198,7 +272,7 @@ pub fn experiment_1(mode: OutputMode, input_raw: &[u8]) {
         spec.sample(|&x| imp::shift_u64(20, a, x) as u32);
     }
     {
-        let spec = Spec {
+        let spec = Spec1 {
             config,
             family: ("shift", 128, true),
             input: (reps, input_128),
@@ -209,7 +283,7 @@ pub fn experiment_1(mode: OutputMode, input_raw: &[u8]) {
         spec.sample(|&x| imp::shift_u128_128(20, a, x) as u32);
     }
     {
-        let spec = Spec {
+        let spec = Spec1 {
             config,
             family: ("shift-strong", 32, false),
             input: (reps, input_32),
@@ -221,7 +295,7 @@ pub fn experiment_1(mode: OutputMode, input_raw: &[u8]) {
         spec.sample(|&x| imp::shift_strong_u32(20, a, b, x) as u32);
     }
     {
-        let spec = Spec {
+        let spec = Spec1 {
             config,
             family: ("shift-strong", 64, true),
             input: (reps, input_64),
@@ -236,7 +310,7 @@ pub fn experiment_1(mode: OutputMode, input_raw: &[u8]) {
     // Multiply-Mod-Prime
 
     {
-        let spec = Spec {
+        let spec = Spec1 {
             config,
             family: ("mmp", 30, false),
             input: (reps, input_32),
@@ -248,7 +322,7 @@ pub fn experiment_1(mode: OutputMode, input_raw: &[u8]) {
         spec.sample(|&x| imp::mmp_p31_u30(20, a, b, x));
     }
     {
-        let spec = Spec {
+        let spec = Spec1 {
             config,
             family: ("mmp-triple", 64, false),
             input: (reps, input_64),
@@ -260,7 +334,7 @@ pub fn experiment_1(mode: OutputMode, input_raw: &[u8]) {
         spec.sample(|&x| imp::mmp_p31_u64(20, a, b, x));
     }
     {
-        let spec = Spec {
+        let spec = Spec1 {
             config,
             family: ("mmp", 60, true),
             input: (reps, input_64),
@@ -272,7 +346,7 @@ pub fn experiment_1(mode: OutputMode, input_raw: &[u8]) {
         spec.sample(|&x| imp::mmp_p61_u60_128(20, a, b, x) as u32);
     }
     {
-        let spec = Spec {
+        let spec = Spec1 {
             config,
             family: ("mmp", 64, false),
             input: (reps, input_64),
@@ -285,32 +359,37 @@ pub fn experiment_1(mode: OutputMode, input_raw: &[u8]) {
     }
 }
 
-fn time_2<T, F>(mode: OutputMode, rep: u32, num: u32, scheme: &str, input: &[T], func: F)
-where
-    F: Fn(&[T], &mut u32),
-{
-    let input = test::black_box(input);
+////////////////////////////////////////
+// Experiment 2
+////////////////////////////////////////
 
-    for _ in 0..rep {
-        let mut tmp = 0;
+pub struct Spec2<'a, T: 'a> {
+    config: (OutputMode, u32),
+    family: &'a str,
+    input: (u32, &'a [T]),
+}
 
-        let start = Instant::now();
-        for _ in 0..num {
-            func(input, &mut tmp);
-        }
-        let elapsed = start.elapsed();
+impl<'a, T: 'a> Spec2<'a, T> {
+    pub fn sample<F>(&self, mut func: F)
+    where
+        F: FnMut(&T) -> u32,
+    {
+        let (mode, samples) = self.config;
+        let family = self.family;
+        let (reps, input) = self.input;
 
-        let _ = test::black_box(tmp);
+        for _ in 0..samples {
+            let nanos = time_nanos_slice_with_state(reps, input, 0, |value, state| {
+                *state ^= func(value);
+            });
 
-        let secs = (elapsed.as_secs() as f64) + (elapsed.subsec_nanos() as f64 / 1e9);
-        let nspervalue = secs / (num as f64) / (input.len() as f64) * 1e9;
-
-        match mode {
-            OutputMode::Pretty => {
-                println!("Scheme: {}; ns/value: {:.6}", scheme, nspervalue);
-            }
-            OutputMode::Csv => {
-                println!("{},{}", scheme, nspervalue);
+            match mode {
+                OutputMode::Pretty => {
+                    println!("Family: {}; ns/value: {:.6}", family, nanos);
+                }
+                OutputMode::Csv => {
+                    println!("{},{}", family, nanos);
+                }
             }
         }
     }
@@ -345,42 +424,10 @@ pub fn experiment_2(mode: OutputMode, input_raw: &[u8]) {
         println!("scheme,nspervalue");
     }
 
-    struct Spec<'a, T: 'a> {
-        config: (OutputMode, u32),
-        family: &'a str,
-        input: (u32, &'a [T]),
-    }
-
-    impl<'a, T: 'a> Spec<'a, T> {
-        fn sample<F>(&self, mut func: F)
-        where
-            F: FnMut(&T) -> u32,
-        {
-            let (mode, samples) = self.config;
-            let family = self.family;
-            let (reps, input) = self.input;
-
-            for _ in 0..samples {
-                let nanos = time_nanos_slice_with_state(reps, input, 0, |value, state| {
-                    *state ^= func(value);
-                });
-
-                match mode {
-                    OutputMode::Pretty => {
-                        println!("Family: {}; ns/value: {:.6}", family, nanos);
-                    }
-                    OutputMode::Csv => {
-                        println!("{},{}", family, nanos);
-                    }
-                }
-            }
-        }
-    }
-
     // Vector-Shift
 
     {
-        let spec = Spec {
+        let spec = Spec2 {
             config,
             family: "vector-shift",
             input: (reps, input_32),
@@ -466,7 +513,7 @@ pub fn experiment_2(mode: OutputMode, input_raw: &[u8]) {
     // Pair-Shift
 
     {
-        let spec = Spec {
+        let spec = Spec2 {
             config,
             family: "pair-shift",
             input: (reps, input_64),
@@ -550,33 +597,88 @@ pub fn experiment_2(mode: OutputMode, input_raw: &[u8]) {
     }
 }
 
-fn experiment_3(mode: OutputMode, input_raw: &[u8]) {
+////////////////////////////////////////
+// Experiment 3
+////////////////////////////////////////
+
+pub struct Spec3<'a, T: 'a> {
+    config: (OutputMode, u32),
+    family: &'a str,
+    input: (u32, &'a [T]),
+}
+
+impl<'a, T: 'a> Spec3<'a, T> {
+    pub fn sample<F>(&self, mut func: F)
+    where
+        F: FnMut(&[T]) -> u32,
+    {
+        let (mode, samples) = self.config;
+        let family = self.family;
+        let (reps, input) = self.input;
+
+        for _ in 0..samples {
+            let nanos = time_nanos_with_state(reps, 0, |state| {
+                *state ^= func(input);
+            });
+
+            let nanos = nanos / (input.len() as f64);
+
+            match mode {
+                OutputMode::Pretty => {
+                    println!("Family: {}; ns/value: {:.6}", family, nanos);
+                }
+                OutputMode::Csv => {
+                    println!("{},{}", family, nanos);
+                }
+            }
+        }
+    }
+}
+
+pub fn experiment_3(mode: OutputMode, input_raw: &[u8]) {
     let input_8 = &input_raw[..input_raw.len() & !7];
 
     let mut input_64 = vec![0; input_8.len() / 8];
 
     BigEndian::read_u64_into(&input_8, &mut input_64[..]);
 
-    let rep = 10;
-    let num = 400;
+    let input_64 = test::black_box(&input_64[..]);
+
+    let samples = 10;
+    let reps = 400;
+
+    let config = (mode, samples);
 
     if mode.is_csv() {
         println!("scheme,nspervalue");
     }
 
     {
+        let spec = Spec3 {
+            config,
+            family: "poly",
+            input: (reps, input_64),
+        };
+
         let a = test::black_box([0x62b2da6d, 0x8826958f, 0x0ec048cd]);
         let b = test::black_box([0x9f7fe744, 0x94dddebf, 0x2b0d2821]);
         let c = test::black_box([0x02f6a761, 0xa607ade8, 0x27f45a1d]);
-        time_2(mode, rep, num, "poly-64", &input_64[..], |input, tmp| {
+
+        spec.sample(|input| {
             let mut h = imp::PolyU64::new(a, b, c);
-            for &value in input {
-                h.write_u64(value);
+            for &x in input {
+                h.write_u64(x);
             }
-            *tmp ^= h.finish(20) as u32;
+            h.finish(20) as u32
         });
     }
     {
+        let spec = Spec3 {
+            config,
+            family: "preproc-poly",
+            input: (reps, input_64),
+        };
+
         let prep1 = test::black_box([
             0xb2711dd1f64b11f8,
             0xa14d82ab5a17a6a7,
@@ -714,74 +816,38 @@ fn experiment_3(mode: OutputMode, input_raw: &[u8]) {
         let a = test::black_box([0x640a3992, 0xa9aec943, 0x061d4e0c]);
         let b = test::black_box([0x4ff935a2, 0x0e0c9fcb, 0x1d3fb360]);
         let c = test::black_box([0xb6aaea65, 0x7f9eefc7, 0x320577f3]);
-        time_2(mode, rep, num, "poly-64", &input_64[..], |input, tmp| {
+
+        spec.sample(|input| {
             let h0 = imp::PolyU64::new(a, b, c);
             let h1 = imp::PairShiftU64D32::new(prep1);
             let h2 = imp::PairShiftU64D32::new(prep2);
             let mut h = imp::PreprocPolyU64D32::new(h0, h1, h2);
-            for &value in input {
-                h.write_u64(value);
+            for &x in input {
+                h.write_u64(x);
             }
-            *tmp ^= h.finish(20) as u32;
+            h.finish(20) as u32
         });
     }
+
+    // SipHash
 
     #[allow(deprecated)]
     {
-        time_2(mode, rep, num, "sip", &input_64[..], |input, tmp| {
-            let mut h = SipHasher::new_with_keys(0x3b67cbb8b09e78f0, 0xd7f3a93cead49a81);
-            for &value in input {
-                h.write_u64(value);
+        let spec = Spec3 {
+            config,
+            family: "siphash",
+            input: (reps, input_64),
+        };
+
+        let a = test::black_box(0x3b67cbb8b09e78f0);
+        let b = test::black_box(0xd7f3a93cead49a81);
+
+        spec.sample(|input| {
+            let mut h = SipHasher::new_with_keys(a, b);
+            for &x in input {
+                h.write_u64(x);
             }
-            *tmp ^= (h.finish() & ((1 << 20) - 1)) as u32;
+            (h.finish() & ((1 << 20) - 1)) as u32
         });
-    }
-}
-
-fn main() {
-    let mut input_raw = Vec::new();
-    {
-        let mut file = File::open("input.txt").unwrap();
-        file.read_to_end(&mut input_raw).unwrap();
-    }
-
-    // Parse '-c' or '-p' argument.
-
-    let mut mode = None;
-
-    let mut args = env::args();
-
-    let argv0 = args.next().unwrap();
-
-    for arg in args {
-        match &arg[..] {
-            "-c" => mode = Some(OutputMode::Csv),
-            "-p" => mode = Some(OutputMode::Pretty),
-            _ => {
-                eprintln!("Usage: cargo run --release -- [-cp]");
-                eprintln!("{}: unexpected option {:?}", argv0, arg);
-                process::exit(2);
-            }
-        }
-    }
-
-    let mode = match mode {
-        Some(mode) => mode,
-        None => {
-            eprintln!("Usage: cargo run --release -- [-cp]");
-            eprintln!("Options:");
-            eprintln!("  -c        Output as CSV.");
-            eprintln!("  -p        Output as human-readable text.");
-            process::exit(2);
-        }
-    };
-
-    let num = 2;
-
-    match num {
-        1 => experiment_1(mode, &input_raw),
-        2 => experiment_2(mode, &input_raw),
-        3 => experiment_3(mode, &input_raw),
-        _ => panic!(),
     }
 }
