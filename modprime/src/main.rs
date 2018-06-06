@@ -535,9 +535,9 @@ pub fn experiment_1(mode: OutputMode, input_raw: &[u8]) {
             input: (reps, &input[..]),
         };
 
-        let a = test::black_box([1, 1, 1]);
-        let b = test::black_box([1, 1, 1]);
-        let c = test::black_box([1, 1, 1]);
+        let a = test::black_box([0x0b9ba445, 0x417af2f0, 0x0057491f]);
+        let b = test::black_box([0x7955e3d0, 0x9bc12da3, 0x00199f87]);
+        let c = test::black_box([0xaf04903c, 0xa17b4a10, 0x01db4b2a]);
 
         spec.sample(|&chunk| {
             let mut h = imp::PolyU64::new(a, b, c);
@@ -558,9 +558,9 @@ pub fn experiment_1(mode: OutputMode, input_raw: &[u8]) {
             input: (reps, &input[..]),
         };
 
-        let a = test::black_box([1, 1, 1]);
-        let b = test::black_box([1, 1, 1]);
-        let c = test::black_box([1, 1, 1]);
+        let a = test::black_box([0x8ef01a402b94d1c0, 0xb51e6c8268b54d1e, 0x03de6480bede297c]);
+        let b = test::black_box([0xd50d4b3992ece1d9, 0x03a9c4958c1da245, 0x8b24cd3ab504d6dd]);
+        let c = test::black_box([0xb96bffb, 0xf3a4f6ed, 0x00304d5]);
 
         spec.sample(|&chunk| {
             let mut h = imp::PolyShiftU64::new(a, b, c);
@@ -581,11 +581,143 @@ pub fn experiment_1(mode: OutputMode, input_raw: &[u8]) {
             input: (reps, &input[..]),
         };
 
-        let prep1 = test::black_box([1; 65]);
-        let prep2 = test::black_box([1; 65]);
-        let a = test::black_box([1, 1, 1]);
-        let b = test::black_box([1, 1, 1]);
-        let c = test::black_box([1, 1, 1]);
+        let prep1 = test::black_box([
+            0xd4f3ea9a2272d2c9,
+            0xdc3760cf448d30de,
+            0x829a1ad6e0abd369,
+            0x230f22c05f31fafc,
+            0x002d73bc6ac9c0fc,
+            0x419c1546bb4977a7,
+            0xfea2830da72e0e6d,
+            0xa00338b990b45a8c,
+            0xe0de174e92cf5e99,
+            0x36418152d5968837,
+            0x2a2a7405dac587dd,
+            0x25574d5fd34af777,
+            0x5f18f14d3412b17d,
+            0x1676f95bacafc489,
+            0xed3434ec09e4b62d,
+            0x56e99b95cb0d4f9d,
+            0x54c88c976f310672,
+            0xfa2766750bbf1f25,
+            0x65002b5b3acd700c,
+            0xc05148d06acae7d5,
+            0xc0610f45410d5256,
+            0x25319fde69181971,
+            0x8f7dc42720036b89,
+            0x6cecd60153308cc5,
+            0x02d75542ffd5c577,
+            0xd46a35bbb01dde07,
+            0x24c68493c6415a2b,
+            0xa1dfd559ae8df2dd,
+            0xe1d2be95d97103c6,
+            0x6faae1b39a370207,
+            0x7cb936383ea8f636,
+            0x35a877ba36684a49,
+            0x391d0d8071296d85,
+            0x1940afc3115a74fe,
+            0x9db6814ee4e7c24c,
+            0xd1bbd8a2001640ac,
+            0x11607bc954d1230e,
+            0x55aeacb12b50f86d,
+            0xc5dc3deb1d59a85a,
+            0x8de127f87198bf1d,
+            0xfaee0ebc89ad2800,
+            0x83673b37d48744e4,
+            0x92151b4f93a7af0d,
+            0x842179950de5f38b,
+            0x8d546a4f1d6acd5d,
+            0x120310df82213b5c,
+            0xd7ad98d66a4e3d0d,
+            0xfd5bef050ff4a4d3,
+            0x8621bb888e337211,
+            0x75e82bfc266664a9,
+            0x7e71425364b3073c,
+            0x92d689dc0c2ed4eb,
+            0x59e7c793769396b8,
+            0x91f81934ca3ab4fe,
+            0x8174e8f77fa652ad,
+            0xba8400831008b6c1,
+            0x3e3688a0abcaf0ae,
+            0xd5a7b3900d9338bf,
+            0xbd9ef501de44419d,
+            0x41a458647e47d983,
+            0x032a1474ff8ebfa7,
+            0x508f3131ba0cbf6b,
+            0x2cc6638bdabeed00,
+            0xd64f3d02ad071cfd,
+            0xf9da197c7c01a0c6,
+        ]);
+        let prep2 = test::black_box([
+            0x294bb7f532dbd709,
+            0x670c0d41304eb2f1,
+            0x0b96b34742fb10eb,
+            0xed95ba02eeeb659c,
+            0x0012a024c15b0549,
+            0xa8bfaa87980ce9be,
+            0xf9bab0b2f2186d76,
+            0x617623d3b002b90b,
+            0x895068358779ce81,
+            0xec122ed2ff2547fb,
+            0x71a5296e12e1e89d,
+            0xdba1deb3733180ec,
+            0x6e672becd9eab262,
+            0xdf843b38de2bced4,
+            0x1aabf5b285966939,
+            0x02e7579b88a6da96,
+            0xa1e16c1d4abb89dd,
+            0x4a0cebb617f42c32,
+            0xb2ae462b89e36d43,
+            0x7f30887ff26c18b7,
+            0x51b709353a779bae,
+            0xea74b3e11996364a,
+            0x84abb5910b75b4ce,
+            0xb03e324fbb354317,
+            0xe03aade036376b5a,
+            0xaf4c33010cb9a594,
+            0x6dbf0d4a4896e540,
+            0x037a4c06fad66b97,
+            0x00a1135ec4555bac,
+            0x01739917452a48d8,
+            0x28b12cc96cb64d1c,
+            0x98070ebf86ec5e79,
+            0xc55ef31503ff8c4a,
+            0xf9b52f06630847e3,
+            0x3fada88ff1b136ca,
+            0xbdc8e4b29bdb9c61,
+            0x6eee6c3579a3d829,
+            0xa892da6df62cc4bd,
+            0xbdbd589fd800ba7e,
+            0xa0927cda42f179f5,
+            0xc597e0052d095ac3,
+            0x9f5cc40389c138c1,
+            0x7894e62a9edb1e67,
+            0x45a2ad2fa22b70f6,
+            0x8c77ecf89997376c,
+            0xc63ca3f89f4a4fdc,
+            0x471bb9e6c708c349,
+            0xa7df821991d508d1,
+            0x80e599de1192f2ca,
+            0x130293d5f2114833,
+            0xb45679c069ed61dc,
+            0x38320009fdf56727,
+            0x41d29ccc5b4a23d0,
+            0xba2a07687599b6ac,
+            0x3882402c4f88cdac,
+            0x1aa06ddb9575ce70,
+            0x143508533fcd2590,
+            0xb2722b1a7b40a47b,
+            0xa44e7d5966fd764b,
+            0x56563507e31a9cc3,
+            0xb3f42b919b571c96,
+            0x21269ff066daca37,
+            0xc6a79bdbe45a356a,
+            0x7406c10cada8c543,
+            0x87565863da322aac,
+        ]);
+        let a = test::black_box([0xec9f5086, 0xb59700c9, 0x00b9156b]);
+        let b = test::black_box([0xf2dcaf8a, 0x2fbd1937, 0x019dfd97]);
+        let c = test::black_box([0x71976d5e, 0xe5ee27a3, 0x00528ef6]);
 
         spec.sample(|&chunk| {
             let mut h = imp::PreprocPolyU64D32::new(prep1, prep2, a, b, c);
@@ -609,8 +741,8 @@ pub fn experiment_1(mode: OutputMode, input_raw: &[u8]) {
             input: (reps, &input[..]),
         };
 
-        let a = test::black_box(1);
-        let b = test::black_box(1);
+        let a = test::black_box(0xdaec7826dea3bfbc);
+        let b = test::black_box(0xa4cc9c56ee7d4797);
 
         spec.sample(|&chunk| {
             let mut h = SipHasher::new_with_keys(a, b);
