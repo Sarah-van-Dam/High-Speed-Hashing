@@ -5,11 +5,13 @@ use test;
 // Multiply-Mod-Prime
 ////////////////////////////////////////
 
+pub const M31: u32 = 0x7fffffff;
+pub const M61: u64 = 0x1fffffff_ffffffff;
+pub const M89: [u32; 3] = [0xffffffff, 0xffffffff, 0x01ffffff];
+
 // Constants: p = 2^89 - 1
 // Interface: u = 2^64, m = 2^l, l <= 64
 // Parameters: a, b < 2^32
-
-pub const M89: [u32; 3] = [0xffffffff, 0xffffffff, 0x01ffffff];
 
 #[inline]
 pub fn mmp_p89_u64(l: usize, a: [u32; 3], b: [u32; 3], x: u64) -> u64 {
@@ -26,8 +28,6 @@ pub fn mmp_p89_u64(l: usize, a: [u32; 3], b: [u32; 3], x: u64) -> u64 {
 // Constants: p = 2^31 - 1
 // Interface: u <= p, m = 2^l, l <= 32
 // Parameters: a, b < 2^32
-
-pub const M31: u32 = 0x7fffffff;
 
 #[inline]
 pub fn mmp_p31_u30(l: usize, a: u32, b: u32, x: u32) -> u32 {
@@ -64,8 +64,6 @@ pub fn mmp_p31_u64(l: usize, a: [u32; 3], b: [u32; 3], x: u64) -> u32 {
 // Constants: p = 2^61 - 1
 // Interface: u <= p, m = 2^l, l < 61
 // Parameters: a, b < p
-
-pub const M61: u64 = 0x1fffffffffffffff;
 
 #[inline]
 pub fn mmp_p61_u60_128(l: usize, a: u64, b: u64, x: u64) -> u64 {
@@ -231,6 +229,40 @@ impl PolyU64 {
         let value = (t[0] as u64) | ((t[1] as u64) << 32);
         self.state = [0, 0, 0];
         value & ((1 << l) - 1)
+    }
+}
+
+pub struct PolyShiftU64 {
+    a: [u64; 3],
+    b: [u64; 3],
+    c: [u32; 3],
+    state: [u32; 3],
+}
+
+impl PolyShiftU64 {
+    #[inline]
+    pub fn new(a: [u64; 3], b: [u64; 3], c: [u32; 3]) -> Self {
+        let state = [0, 0, 0];
+        Self { a, b, c, state }
+    }
+
+    #[inline]
+    pub fn write_u64(&mut self, x: u64) {
+        let x0 = x as u32;
+        let x1 = (x >> 32) as u32;
+        let s = mul3x3(self.c, self.state);
+        self.state = add6x3modp(s, [x0, x1, 0]);
+    }
+
+    #[inline]
+    pub fn finish(&mut self, l: usize) -> u32 {
+        let q0 = shift_strong_u32(l, self.a[0], self.b[0], self.state[0]);
+        let q1 = shift_strong_u32(l, self.a[1], self.b[1], self.state[1]);
+        let q2 = shift_strong_u32(l, self.a[2], self.b[2], self.state[2]);
+
+        self.state = [0, 0, 0];
+
+        q0 ^ q1 ^ q2
     }
 }
 

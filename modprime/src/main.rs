@@ -66,9 +66,8 @@ pub fn main() {
             "-p" => mode = Some(OutputMode::Pretty),
             "1" => experiment = 1,
             "2" => experiment = 2,
-            "3" => experiment = 3,
             _ => {
-                eprintln!("Usage: cargo run --release -- [-cp] 1-3");
+                eprintln!("Usage: cargo run --release -- [-cp] 1-2");
                 eprintln!("{}: unexpected argument {:?}", argv0, arg);
                 process::exit(2);
             }
@@ -84,12 +83,12 @@ pub fn main() {
     let mode = match mode {
         Some(mode) => mode,
         None => {
-            eprintln!("Usage: cargo run --release -- [-cp] 1-3");
+            eprintln!("Usage: cargo run --release -- [-cp] 1-2");
             eprintln!("Options:");
             eprintln!("  -c        Output as CSV.");
             eprintln!("  -p        Output as human-readable text.");
             eprintln!("Arguments:");
-            eprintln!("  1-3       Select the experiment to perform.");
+            eprintln!("  1-2       Select the experiment to perform.");
             process::exit(2);
         }
     };
@@ -99,7 +98,6 @@ pub fn main() {
     match experiment {
         1 => experiment_1(mode, &input_raw),
         2 => experiment_2(mode, &input_raw),
-        3 => experiment_3(mode, &input_raw),
         _ => unreachable!(),
     }
 }
@@ -153,7 +151,7 @@ where
 ////////////////////////////////////////
 
 pub struct Spec1<'a, T: 'a> {
-    config: (OutputMode, u32),
+    mode: OutputMode,
     family: (&'a str, u32, bool),
     input: (u32, &'a [T]),
 }
@@ -163,58 +161,78 @@ impl<'a, T: 'a> Spec1<'a, T> {
     where
         F: FnMut(&T) -> u32,
     {
-        let (mode, samples) = self.config;
         let (scheme, bits, is_128) = self.family;
         let (reps, input) = self.input;
 
-        for _ in 0..samples {
-            let mut state = 0;
-            let nanos = time_nanos_slice(reps, input, |value| state ^= func(value));
-            let _ = test::black_box(state);
+        let input = test::black_box(input);
 
-            match mode {
-                OutputMode::Pretty => {
-                    println!(
-                        "Scheme: {}, input bit-length: {}, 128-bit: {}; ns/value: {:.6}",
-                        scheme, bits, is_128, nanos
-                    );
-                }
-                OutputMode::Csv => {
-                    let is_128 = if is_128 { "TRUE" } else { "FALSE" };
-                    println!("{},{},{},{}", scheme, bits, is_128, nanos);
-                }
+        let mut state = 0;
+        let nanos = time_nanos_slice(reps, input, |value| state ^= func(value));
+        let _ = test::black_box(state);
+
+        match self.mode {
+            OutputMode::Pretty => {
+                println!(
+                    "Scheme: {}, input bit-length: {}, 128-bit: {}; ns/value: {:.6}",
+                    scheme, bits, is_128, nanos
+                );
+            }
+            OutputMode::Csv => {
+                let is_128 = if is_128 { "TRUE" } else { "FALSE" };
+                println!("{},{},{},{}", scheme, bits, is_128, nanos);
             }
         }
     }
 }
 
+pub fn prepare_input_chunked<'a, 'b, T, F>(
+    raw: &'a [u8],
+    size: usize,
+    n: usize,
+    vec: &'b mut Vec<Vec<T>>,
+    mut func: F,
+) -> Vec<&'b [T]>
+where
+    T: Clone + Default,
+    F: FnMut(&[u8], &mut [T]),
+{
+    for chunk in raw.chunks(size * n) {
+        if chunk.len() < size * n {
+            continue;
+        }
+
+        let mut value = vec![Default::default(); n];
+        func(chunk, &mut value);
+        vec.push(value);
+    }
+
+    vec.iter().map(|vec| &vec[..]).collect()
+}
+
 pub fn experiment_1(mode: OutputMode, input_raw: &[u8]) {
-    let input_raw = &input_raw[..input_raw.len() & !3];
+    let input_raw = &input_raw[..input_raw.len() & !15];
 
-    let mut input_raw_u32 = vec![0; input_raw.len() / 4];
-    BigEndian::read_u32_into(input_raw, &mut input_raw_u32[..]);
+    let mut input_32 = vec![0; input_raw.len() / 4];
+    let mut input_64 = vec![0; input_raw.len() / 8];
 
-    let input_32 = input_raw_u32
-        .iter()
-        .map(|&value| value & 0x3fffffff)
-        .collect::<Vec<_>>();
-    let input_64 = input_32
-        .iter()
-        .map(|&value| u64::from(value))
-        .collect::<Vec<_>>();
-    let input_128 = input_32
-        .iter()
-        .map(|&value| u128::from(value))
+    BigEndian::read_u32_into(input_raw, &mut input_32);
+    BigEndian::read_u64_into(input_raw, &mut input_64);
+
+    let input_128 = input_64
+        .chunks(2)
+        .map(|x| (u128::from(x[0]) << 64) | u128::from(x[1]))
         .collect::<Vec<_>>();
 
-    let input_32 = test::black_box(&input_32[..]);
-    let input_64 = test::black_box(&input_64[..]);
-    let input_128 = test::black_box(&input_128[..]);
+    let input_30 = input_32
+        .iter()
+        .map(|&x| x & ((1 << 30) - 1))
+        .collect::<Vec<_>>();
+    let input_60 = input_64
+        .iter()
+        .map(|&x| x & ((1 << 60) - 1))
+        .collect::<Vec<_>>();
 
-    let samples = 10;
-    let reps = 1000;
-
-    let config = (mode, samples);
+    let reps = 100;
 
     if mode.is_csv() {
         println!("scheme,bits,is128,nanos");
@@ -224,9 +242,9 @@ pub fn experiment_1(mode: OutputMode, input_raw: &[u8]) {
 
     {
         let spec = Spec1 {
-            config,
+            mode,
             family: ("shift", 32, false),
-            input: (reps, input_32),
+            input: (reps, &input_32[..]),
         };
 
         let a = test::black_box(0x3bca40c7);
@@ -235,9 +253,9 @@ pub fn experiment_1(mode: OutputMode, input_raw: &[u8]) {
     }
     {
         let spec = Spec1 {
-            config,
+            mode,
             family: ("shift", 64, false),
-            input: (reps, input_64),
+            input: (reps, &input_64[..]),
         };
 
         let a = test::black_box(0xa570f20b9bd5adfb);
@@ -246,9 +264,9 @@ pub fn experiment_1(mode: OutputMode, input_raw: &[u8]) {
     }
     {
         let spec = Spec1 {
-            config,
+            mode,
             family: ("shift", 128, true),
-            input: (reps, input_128),
+            input: (reps, &input_128[..]),
         };
 
         let a = test::black_box(0x2cb56e50f9538749b4a1648382ba0d59);
@@ -257,9 +275,9 @@ pub fn experiment_1(mode: OutputMode, input_raw: &[u8]) {
     }
     {
         let spec = Spec1 {
-            config,
+            mode,
             family: ("shift-strong", 32, false),
-            input: (reps, input_32),
+            input: (reps, &input_32[..]),
         };
 
         let a = test::black_box(0x9cb37f1a);
@@ -269,9 +287,9 @@ pub fn experiment_1(mode: OutputMode, input_raw: &[u8]) {
     }
     {
         let spec = Spec1 {
-            config,
+            mode,
             family: ("shift-strong", 64, true),
-            input: (reps, input_64),
+            input: (reps, &input_64[..]),
         };
 
         let a = test::black_box(0x6865db19e3d1b464);
@@ -284,9 +302,9 @@ pub fn experiment_1(mode: OutputMode, input_raw: &[u8]) {
 
     {
         let spec = Spec1 {
-            config,
+            mode,
             family: ("mmp", 30, false),
-            input: (reps, input_32),
+            input: (reps, &input_30[..]),
         };
 
         let a = test::black_box(0x40ed8147);
@@ -296,9 +314,9 @@ pub fn experiment_1(mode: OutputMode, input_raw: &[u8]) {
     }
     {
         let spec = Spec1 {
-            config,
+            mode,
             family: ("mmp-triple", 64, false),
-            input: (reps, input_64),
+            input: (reps, &input_64[..]),
         };
 
         let a = test::black_box([0x68dc5b2d, 0x29ad0bce, 0x278a331a]);
@@ -308,9 +326,9 @@ pub fn experiment_1(mode: OutputMode, input_raw: &[u8]) {
     }
     {
         let spec = Spec1 {
-            config,
+            mode,
             family: ("mmp", 60, true),
-            input: (reps, input_64),
+            input: (reps, &input_60[..]),
         };
 
         let a = test::black_box(0x02f52fcd0b6474c3);
@@ -320,9 +338,9 @@ pub fn experiment_1(mode: OutputMode, input_raw: &[u8]) {
     }
     {
         let spec = Spec1 {
-            config,
+            mode,
             family: ("mmp", 64, false),
-            input: (reps, input_64),
+            input: (reps, &input_64[..]),
         };
 
         let a = test::black_box([0xc543be39, 0xf663c8a4, 0x017193ad]);
@@ -330,166 +348,17 @@ pub fn experiment_1(mode: OutputMode, input_raw: &[u8]) {
 
         spec.sample(|&x| imp::mmp_p89_u64(20, a, b, x) as u32);
     }
-}
 
-////////////////////////////////////////
-// Experiment 2
-////////////////////////////////////////
+    // String Hashing
 
-pub struct Spec2<'a, T: 'a> {
-    config: (OutputMode, u32),
-    family: &'a str,
-    input: (u32, &'a [T]),
-}
+    for n in 1..=64 {
+        let mut vec = Vec::new();
+        let input = prepare_input_chunked(input_raw, 4, n, &mut vec, BigEndian::read_u32_into);
 
-impl<'a, T: 'a> Spec2<'a, T> {
-    pub fn sample<F>(&self, mut func: F)
-    where
-        F: FnMut(&T) -> u32,
-    {
-        let (mode, samples) = self.config;
-        let family = self.family;
-        let (reps, input) = self.input;
-
-        for _ in 0..samples {
-            let mut state = 0;
-            let nanos = time_nanos_slice(reps, input, |value| state ^= func(value));
-            let _ = test::black_box(state);
-
-            match mode {
-                OutputMode::Pretty => {
-                    println!("Family: {}; ns/value: {:.6}", family, nanos);
-                }
-                OutputMode::Csv => {
-                    println!("{},{}", family, nanos);
-                }
-            }
-        }
-    }
-}
-
-pub fn experiment_2(mode: OutputMode, input_raw: &[u8]) {
-    let input_raw = &input_raw[..input_raw.len() & !255];
-
-    let mut input_32 = Vec::new();
-    let mut input_64 = Vec::new();
-
-    for chunk in input_raw.chunks(256) {
-        let mut chunk_32 = [0; 64];
-        let mut chunk_64 = [0; 32];
-
-        BigEndian::read_u32_into(chunk, &mut chunk_32);
-        BigEndian::read_u64_into(chunk, &mut chunk_64);
-
-        input_32.push(chunk_32);
-        input_64.push(chunk_64);
-    }
-
-    let input_32 = test::black_box(&input_32[..]);
-    let input_64 = test::black_box(&input_64[..]);
-
-    let samples = 10;
-    let reps = 2000;
-
-    let config = (mode, samples);
-
-    if mode.is_csv() {
-        println!("family,nanos");
-    }
-
-    // Vector-Shift
-
-    {
-        let spec = Spec2 {
-            config,
-            family: "vector-shift",
-            input: (reps, input_32),
-        };
-
-        let a = test::black_box([
-            0xa32b511bb9419925,
-            0x468967dfa5b55d7c,
-            0xd42a4cfdeaccd43c,
-            0x3c2c20e3f28f94ad,
-            0xce58ab0fc65d6b53,
-            0xa24f83440516d39e,
-            0xfeda02478b1da9bb,
-            0x0a1c38a336c2f53f,
-            0xee08871d414ea1e4,
-            0x751f29778f19e95e,
-            0x40714e646dcda33a,
-            0xb304dbe1cd04d2ac,
-            0x4c58ef616d8f044f,
-            0xd006a9b5e0dc2623,
-            0x1e9d6de78875186e,
-            0x4c7c6c3f07eb6795,
-            0x1503435a2323b6de,
-            0x697bc32cadc36151,
-            0xef2942f4cc29ce0d,
-            0x09aadd479d1e4147,
-            0x77a506902fc4e94c,
-            0x35601d50f726e15c,
-            0x359fbdab75f704ec,
-            0x08b069380425ddcb,
-            0x77071ac116b7bfe2,
-            0x0f1fe1f375365ab0,
-            0x1df5d02088d82064,
-            0x373a6593a7b533dd,
-            0xddca0594cabad3fa,
-            0xafa30a4218f2473b,
-            0xbac3eb0c71667dfd,
-            0x73d944d2aeaa1269,
-            0x9b3993f6d476ee21,
-            0x1d0082cc5add5c6b,
-            0xe1c721ec67b9f8d1,
-            0x4dd3ae5399c02295,
-            0x8c22156793c91933,
-            0x539298bdc22fa4d3,
-            0x518e460a4cebf181,
-            0x28d7214e330ab8f4,
-            0x09bc35ac293702d0,
-            0x9f2e084081b677bc,
-            0x31b981b366dd76e8,
-            0xf8411798adebd9f9,
-            0x4d7935d75ffa99be,
-            0x4a5058b71a2170c3,
-            0x16e68a8922ce1dfa,
-            0x1b26ad0a35d2745d,
-            0x12a7113f0927dca3,
-            0x3ebc8b7f8b09920b,
-            0xde2de731b4800c4e,
-            0x0897fa405ec8cca4,
-            0xf839242a1cda43c5,
-            0xfb8b84894d9d4947,
-            0x392d27343c4f233d,
-            0x9d606bb797002b7f,
-            0x8ee61bbd1967b081,
-            0xfc60e7cd5f76f82c,
-            0x91cbb2891a10527a,
-            0xcfd9ead6bbe3b6c8,
-            0xc091e4ed4cf36d45,
-            0xf44ac339e3d30263,
-            0x7dfecb5fda4973ad,
-            0xc176a7a265736f18,
-            0xa8ce3b04fbd2e1d3,
-        ]);
-
-        spec.sample(|chunk| {
-            let mut h = imp::VectorShiftU32D64::new(a);
-            for &x in &chunk[..] {
-                h.write_u32(x);
-            }
-            h.finish(20)
-        });
-    }
-
-    // Pair-Shift
-
-    {
-        let spec = Spec2 {
-            config,
-            family: "pair-shift",
-            input: (reps, input_64),
+        let spec = Spec1 {
+            mode,
+            family: ("vector-shift", (32 * n) as u32, false),
+            input: (reps, &input[..]),
         };
 
         let a = test::black_box([
@@ -560,55 +429,236 @@ pub fn experiment_2(mode: OutputMode, input_raw: &[u8]) {
             0xc6f31d83502a08d0,
         ]);
 
-        spec.sample(|chunk| {
-            let mut h = imp::PairShiftU64D32::new(a);
-            for &x in &chunk[..] {
-                h.write_u64(x);
+        spec.sample(|&chunk| {
+            let mut h = imp::VectorShiftU32D64::new(a);
+            for &x in chunk {
+                h.write_u32(x);
             }
             h.finish(20)
+        });
+    }
+
+    for n in 1..=32 {
+        let mut vec = Vec::new();
+        let input = prepare_input_chunked(input_raw, 8, n, &mut vec, BigEndian::read_u64_into);
+
+        let spec = Spec1 {
+            mode,
+            family: ("pair-shift", (64 * n) as u32, false),
+            input: (reps, &input[..]),
+        };
+
+        let a = test::black_box([
+            0xa32b511bb9419925,
+            0x468967dfa5b55d7c,
+            0xd42a4cfdeaccd43c,
+            0x3c2c20e3f28f94ad,
+            0xce58ab0fc65d6b53,
+            0xa24f83440516d39e,
+            0xfeda02478b1da9bb,
+            0x0a1c38a336c2f53f,
+            0xee08871d414ea1e4,
+            0x751f29778f19e95e,
+            0x40714e646dcda33a,
+            0xb304dbe1cd04d2ac,
+            0x4c58ef616d8f044f,
+            0xd006a9b5e0dc2623,
+            0x1e9d6de78875186e,
+            0x4c7c6c3f07eb6795,
+            0x1503435a2323b6de,
+            0x697bc32cadc36151,
+            0xef2942f4cc29ce0d,
+            0x09aadd479d1e4147,
+            0x77a506902fc4e94c,
+            0x35601d50f726e15c,
+            0x359fbdab75f704ec,
+            0x08b069380425ddcb,
+            0x77071ac116b7bfe2,
+            0x0f1fe1f375365ab0,
+            0x1df5d02088d82064,
+            0x373a6593a7b533dd,
+            0xddca0594cabad3fa,
+            0xafa30a4218f2473b,
+            0xbac3eb0c71667dfd,
+            0x73d944d2aeaa1269,
+            0x9b3993f6d476ee21,
+            0x1d0082cc5add5c6b,
+            0xe1c721ec67b9f8d1,
+            0x4dd3ae5399c02295,
+            0x8c22156793c91933,
+            0x539298bdc22fa4d3,
+            0x518e460a4cebf181,
+            0x28d7214e330ab8f4,
+            0x09bc35ac293702d0,
+            0x9f2e084081b677bc,
+            0x31b981b366dd76e8,
+            0xf8411798adebd9f9,
+            0x4d7935d75ffa99be,
+            0x4a5058b71a2170c3,
+            0x16e68a8922ce1dfa,
+            0x1b26ad0a35d2745d,
+            0x12a7113f0927dca3,
+            0x3ebc8b7f8b09920b,
+            0xde2de731b4800c4e,
+            0x0897fa405ec8cca4,
+            0xf839242a1cda43c5,
+            0xfb8b84894d9d4947,
+            0x392d27343c4f233d,
+            0x9d606bb797002b7f,
+            0x8ee61bbd1967b081,
+            0xfc60e7cd5f76f82c,
+            0x91cbb2891a10527a,
+            0xcfd9ead6bbe3b6c8,
+            0xc091e4ed4cf36d45,
+            0xf44ac339e3d30263,
+            0x7dfecb5fda4973ad,
+            0xc176a7a265736f18,
+            0xa8ce3b04fbd2e1d3,
+        ]);
+
+        spec.sample(|&chunk| {
+            let mut h = imp::PairShiftU64D32::new(a);
+            for &x in chunk {
+                h.write_u64(x);
+            }
+            h.finish(20) as u32
+        });
+    }
+
+    for n in 1..=48 {
+        let mut vec = Vec::new();
+        let input = prepare_input_chunked(input_raw, 8, n, &mut vec, BigEndian::read_u64_into);
+
+        let spec = Spec1 {
+            mode,
+            family: ("poly", (64 * n) as u32, false),
+            input: (reps, &input[..]),
+        };
+
+        let a = test::black_box([1, 1, 1]);
+        let b = test::black_box([1, 1, 1]);
+        let c = test::black_box([1, 1, 1]);
+
+        spec.sample(|&chunk| {
+            let mut h = imp::PolyU64::new(a, b, c);
+            for &x in chunk {
+                h.write_u64(x);
+            }
+            h.finish(20) as u32
+        });
+    }
+
+    for n in 1..=48 {
+        let mut vec = Vec::new();
+        let input = prepare_input_chunked(input_raw, 8, n, &mut vec, BigEndian::read_u64_into);
+
+        let spec = Spec1 {
+            mode,
+            family: ("poly-shift-triple", (64 * n) as u32, false),
+            input: (reps, &input[..]),
+        };
+
+        let a = test::black_box([1, 1, 1]);
+        let b = test::black_box([1, 1, 1]);
+        let c = test::black_box([1, 1, 1]);
+
+        spec.sample(|&chunk| {
+            let mut h = imp::PolyShiftU64::new(a, b, c);
+            for &x in chunk {
+                h.write_u64(x);
+            }
+            h.finish(20) as u32
+        });
+    }
+
+    for n in 1..=48 {
+        let mut vec = Vec::new();
+        let input = prepare_input_chunked(input_raw, 8, n, &mut vec, BigEndian::read_u64_into);
+
+        let spec = Spec1 {
+            mode,
+            family: ("preproc-poly", (64 * n) as u32, false),
+            input: (reps, &input[..]),
+        };
+
+        let prep1 = test::black_box([1; 65]);
+        let prep2 = test::black_box([1; 65]);
+        let a = test::black_box([1, 1, 1]);
+        let b = test::black_box([1, 1, 1]);
+        let c = test::black_box([1, 1, 1]);
+
+        spec.sample(|&chunk| {
+            let mut h = imp::PreprocPolyU64D32::new(prep1, prep2, a, b, c);
+            for &x in chunk {
+                h.write_u64(x);
+            }
+            h.finish(20) as u32
+        });
+    }
+
+    #[allow(deprecated)]
+    for n in 1..=384 {
+        let mut vec = Vec::new();
+        let input = prepare_input_chunked(input_raw, 1, n, &mut vec, |src, dst| {
+            dst.copy_from_slice(src)
+        });
+
+        let spec = Spec1 {
+            mode,
+            family: ("siphash", (8 * n) as u32, false),
+            input: (reps, &input[..]),
+        };
+
+        let a = test::black_box(1);
+        let b = test::black_box(1);
+
+        spec.sample(|&chunk| {
+            let mut h = SipHasher::new_with_keys(a, b);
+            h.write(chunk);
+            (h.finish() & ((1 << 20) - 1)) as u32
         });
     }
 }
 
 ////////////////////////////////////////
-// Experiment 3
+// Experiment 2
 ////////////////////////////////////////
 
-pub struct Spec3<'a, T: 'a> {
-    config: (OutputMode, u32),
+pub struct Spec2<'a, T: 'a> {
+    config: (OutputMode, usize),
     family: &'a str,
     input: (u32, &'a [T]),
 }
 
-impl<'a, T: 'a> Spec3<'a, T> {
+impl<'a, T: 'a> Spec2<'a, T> {
     pub fn sample<F>(&self, mut func: F)
     where
         F: FnMut(&[T]) -> u32,
     {
-        let (mode, samples) = self.config;
+        let (mode, input_len) = self.config;
         let family = self.family;
         let (reps, input) = self.input;
 
-        for _ in 0..samples {
-            let mut state = 0;
-            let nanos = time_nanos(reps, || state ^= func(input));
-            let _ = test::black_box(state);
+        let input = test::black_box(input);
 
-            let nanos = nanos / (input.len() as f64);
+        let mut state = 0;
+        let nanos = time_nanos(reps, || state ^= func(input));
+        let _ = test::black_box(state);
 
-            match mode {
-                OutputMode::Pretty => {
-                    println!("Family: {}; ns/value: {:.6}", family, nanos);
-                }
-                OutputMode::Csv => {
-                    println!("{},{}", family, nanos);
-                }
+        let nanos = nanos / (input_len as f64);
+
+        match mode {
+            OutputMode::Pretty => {
+                println!("Family: {}; ns/value: {:.6}", family, nanos);
+            }
+            OutputMode::Csv => {
+                println!("{},{}", family, nanos);
             }
         }
     }
 }
 
-pub fn experiment_3(mode: OutputMode, input_raw: &[u8]) {
+pub fn experiment_2(mode: OutputMode, input_raw: &[u8]) {
     let input_8 = &input_raw[..input_raw.len() & !7];
 
     let mut input_64 = vec![0; input_8.len() / 8];
@@ -617,17 +667,16 @@ pub fn experiment_3(mode: OutputMode, input_raw: &[u8]) {
 
     let input_64 = test::black_box(&input_64[..]);
 
-    let samples = 10;
     let reps = 400;
 
-    let config = (mode, samples);
+    let config = (mode, input_8.len());
 
     if mode.is_csv() {
         println!("family,nanos");
     }
 
     {
-        let spec = Spec3 {
+        let spec = Spec2 {
             config,
             family: "poly",
             input: (reps, input_64),
@@ -646,7 +695,26 @@ pub fn experiment_3(mode: OutputMode, input_raw: &[u8]) {
         });
     }
     {
-        let spec = Spec3 {
+        let spec = Spec2 {
+            config,
+            family: "poly-shift-triple",
+            input: (reps, input_64),
+        };
+
+        let a = test::black_box([0x793d61ae7fdd32ab, 0x6012b7e4dc15941d, 0xc8572426ef9b5203]);
+        let b = test::black_box([0x7b55dd4f434ac74a, 0x116034079f9a5ee8, 0xe55a53261f00ed6d]);
+        let c = test::black_box([0xb1cae7e6, 0x70417c04, 0xf909b86d]);
+
+        spec.sample(|input| {
+            let mut h = imp::PolyShiftU64::new(a, b, c);
+            for &x in input {
+                h.write_u64(x);
+            }
+            h.finish(20)
+        });
+    }
+    {
+        let spec = Spec2 {
             config,
             family: "preproc-poly",
             input: (reps, input_64),
@@ -803,10 +871,10 @@ pub fn experiment_3(mode: OutputMode, input_raw: &[u8]) {
 
     #[allow(deprecated)]
     {
-        let spec = Spec3 {
+        let spec = Spec2 {
             config,
             family: "siphash",
-            input: (reps, input_64),
+            input: (reps, input_8),
         };
 
         let a = test::black_box(0x3b67cbb8b09e78f0);
@@ -814,9 +882,7 @@ pub fn experiment_3(mode: OutputMode, input_raw: &[u8]) {
 
         spec.sample(|input| {
             let mut h = SipHasher::new_with_keys(a, b);
-            for &x in input {
-                h.write_u64(x);
-            }
+            h.write(input);
             (h.finish() & ((1 << 20) - 1)) as u32
         });
     }
