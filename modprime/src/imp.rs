@@ -11,7 +11,7 @@ pub const M89: [u32; 3] = [0xffffffff, 0xffffffff, 0x01ffffff];
 
 // Constants: p = 2^89 - 1
 // Interface: u = 2^64, m = 2^l, l <= 64
-// Parameters: a, b < 2^32
+// Parameters: a, b < p
 
 #[inline]
 pub fn mmp_p89_u64(l: usize, a: [u32; 3], b: [u32; 3], x: u64) -> u64 {
@@ -27,7 +27,7 @@ pub fn mmp_p89_u64(l: usize, a: [u32; 3], b: [u32; 3], x: u64) -> u64 {
 
 // Constants: p = 2^31 - 1
 // Interface: u <= p, m = 2^l, l <= 32
-// Parameters: a, b < 2^32
+// Parameters: a, b < p
 
 #[inline]
 pub fn mmp_p31_u30(l: usize, a: u32, b: u32, x: u32) -> u32 {
@@ -72,9 +72,7 @@ pub fn mmp_p61_u60_128(l: usize, a: u64, b: u64, x: u64) -> u64 {
     debug_assert!(b < M61);
     debug_assert!(x < M61);
 
-    let r = u128::from(a)
-        .wrapping_mul(u128::from(x))
-        .wrapping_add(u128::from(b));
+    let r = u128::from(a) * u128::from(x) + u128::from(b);
     let s = ((r as u64) & M61) + ((r >> 61) as u64);
     let q = if s >= M61 { s - M61 } else { s };
 
@@ -119,8 +117,8 @@ pub fn shift_strong_u64_128(l: usize, a: u128, b: u128, x: u64) -> u64 {
 // Vectorized Multiply-Shift
 ////////////////////////////////////////
 
-// Constants:
-// Interface: u = 2^32, d = 64, m = 2^l, l <
+// Interface: u = 2^32, d = 64, m = 2^l, l <= 32
+// Parameters: a[i] < 2^32
 
 pub struct VectorShiftU32D64 {
     a: [u64; 65],
@@ -155,6 +153,9 @@ impl VectorShiftU32D64 {
         value
     }
 }
+
+// Interface: u = 2^64, d = 32, m = 2^l, l <= 32
+// Parameters: a[i] < 2^64
 
 pub struct PairShiftU64D32 {
     a: [u64; 65],
@@ -199,6 +200,10 @@ impl PairShiftU64D32 {
 // Polynomial
 ////////////////////////////////////////
 
+// Constants: p = 2^89 - 1
+// Interface: u = 2^64, m = 2^l, l <= 64
+// Parameters: a, b, c < p
+
 pub struct PolyU64 {
     a: [u32; 3],
     b: [u32; 3],
@@ -231,6 +236,10 @@ impl PolyU64 {
         value & ((1 << l) - 1)
     }
 }
+
+// Constants: p = 2^89 - 1
+// Interface: u = 2^64, m = 2^l, l <= 32
+// Parameters: c < p; a[i], b[i] < 2^64
 
 pub struct PolyShiftU64 {
     a: [u64; 3],
@@ -265,6 +274,10 @@ impl PolyShiftU64 {
         q0 ^ q1 ^ q2
     }
 }
+
+// Constants: p = 2^89 - 1, d = 32
+// Interface: u = 2^64, m = 2^l, l <= 64
+// Parameters: prep1[i], prep2[i] < 2^64; a, b, c < p
 
 pub struct PreprocPolyU64D32 {
     prep1: PairShiftU64D32,
@@ -309,16 +322,6 @@ impl PreprocPolyU64D32 {
 ////////////////////////////////////////
 // Helper Functions
 ////////////////////////////////////////
-
-#[inline]
-pub fn add4x4(a: [u32; 4], b: [u32; 4]) -> [u32; 5] {
-    let c0 = (a[0] as u64) + (b[0] as u64);
-    let c1 = (a[1] as u64) + (b[1] as u64) + (c0 >> 32);
-    let c2 = (a[2] as u64) + (b[2] as u64) + (c1 >> 32);
-    let c3 = (a[3] as u64) + (b[3] as u64) + (c2 >> 32);
-    let c4 = c3 >> 32;
-    [c0 as u32, c1 as u32, c2 as u32, c3 as u32, c4 as u32]
-}
 
 #[inline]
 pub fn mul3x1(a: [u32; 3], x: u32) -> [u32; 4] {
