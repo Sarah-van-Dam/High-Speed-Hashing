@@ -1,7 +1,6 @@
 [package]
-name = "modprime"
+name = "hashing"
 version = "0.1.0"
-authors = ["snocl <snorredc@gmail.com>"]
 
 [dependencies]
-byteorder = "*"
+byteorder = "1"
